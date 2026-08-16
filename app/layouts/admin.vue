@@ -75,6 +75,11 @@ const navGroups = [
  icon: 'sliders',
  },
  {
+ label: 'Homepage',
+ to: '/settings/homepage',
+ icon: 'sliders',
+ },
+ {
  label: 'Site Settings',
  to: '/settings/site-settings',
  icon: 'sliders',
