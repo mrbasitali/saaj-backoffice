@@ -25,6 +25,17 @@ export default defineNuxtConfig({
   },
 
   app: {
+    head: {
+      title: 'SAAJ Backoffice',
+      link: [
+        { rel: 'icon', href: '/favicon.ico', sizes: 'any' },
+        { rel: 'icon', type: 'image/png', sizes: '32x32', href: '/favicon-32x32.png' },
+        { rel: 'apple-touch-icon', href: '/icons/apple-touch-icon.png' },
+      ],
+      meta: [
+        { name: 'theme-color', content: '#111310' },
+      ],
+    },
     pageTransition: {
       name: 'page',
       mode: 'out-in',
@@ -42,6 +53,6 @@ export default defineNuxtConfig({
   },
 
   devtools: {
-    enabled: process.env.NODE_ENV !== 'production',
+    enabled: true,
   },
 })
