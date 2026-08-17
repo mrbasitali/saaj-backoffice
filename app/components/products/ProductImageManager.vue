@@ -56,6 +56,7 @@ const cropOpen = ref(false)
 const cropSource = ref('')
 const cropSourceIsObjectUrl = ref(false)
 const cropFilename = ref('')
+const pendingReplaceFile = ref<File | null>(null)
 
 const cropMode =
  ref<CropMode>('replace')
@@ -475,6 +476,7 @@ function onReplaceFileChange(event: Event) {
  )
 
  cropFilename.value = file.name
+ pendingReplaceFile.value = file
  cropOpen.value = true
 
  input.value = ''
@@ -486,6 +488,15 @@ function closeCropper() {
  revokeCropSource()
 
  cropFilename.value = ''
+ pendingReplaceFile.value = null
+}
+
+async function replaceWithOriginal() {
+ if (!pendingReplaceFile.value) {
+ return
+ }
+
+ await replaceWithCropped(pendingReplaceFile.value)
 }
 
 async function replaceWithCropped(
@@ -1580,8 +1591,10 @@ onBeforeUnmount(() => {
  :open="cropOpen"
  :src="cropSource"
  :filename="cropFilename"
+ :allow-original="cropMode === 'replace'"
  background-mode="white"
  @close="closeCropper"
+ @use-original="replaceWithOriginal"
  @cropped="
  replaceWithCropped
  "

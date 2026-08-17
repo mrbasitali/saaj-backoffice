@@ -17,12 +17,15 @@ const props = withDefaults(defineProps<{
  src: string
  filename: string
  backgroundMode?: BackgroundMode
+ allowOriginal?: boolean
 }>(), {
  backgroundMode: 'white',
+ allowOriginal: false,
 })
 
 const emit = defineEmits<{
  close: []
+ 'use-original': []
  cropped: [file: File, previewUrl: string, meta: CropMeta]
 }>()
 
@@ -31,16 +34,19 @@ const processing = ref(false)
 const error = ref('')
 
 const ratioKey = ref('4:5')
-const customWidth = ref(1200)
-const customHeight = ref(1500)
+const customWidth = ref(3200)
+const customHeight = ref(4000)
+
+const JPEG_QUALITY = 0.98
+const MAX_LONG_EDGE = 4000
 
 const ratioOptions = [
- { key: '4:5', label: '4:5 Product', width: 1200, height: 1500, aspect: 4 / 5 },
- { key: '1:1', label: '1:1 Square', width: 1200, height: 1200, aspect: 1 },
- { key: '3:4', label: '3:4 Gallery', width: 1200, height: 1600, aspect: 3 / 4 },
- { key: '16:9', label: '16:9 Banner', width: 1600, height: 900, aspect: 16 / 9 },
- { key: '9:16', label: '9:16 Story', width: 1080, height: 1920, aspect: 9 / 16 },
- { key: 'free', label: 'Free crop', width: 1200, height: 1500, aspect: null },
+ { key: '4:5', label: '4:5 Product', width: 3200, height: 4000, aspect: 4 / 5 },
+ { key: '1:1', label: '1:1 Square', width: 3200, height: 3200, aspect: 1 },
+ { key: '3:4', label: '3:4 Gallery', width: 3000, height: 4000, aspect: 3 / 4 },
+ { key: '16:9', label: '16:9 Banner', width: 3840, height: 2160, aspect: 16 / 9 },
+ { key: '9:16', label: '9:16 Story', width: 2160, height: 3840, aspect: 9 / 16 },
+ { key: 'free', label: 'Free crop', width: 3200, height: 4000, aspect: null },
 ]
 
 const selectedRatio = computed(() => {
@@ -77,8 +83,8 @@ watch(
  if (!open) return
 
  ratioKey.value = '4:5'
- customWidth.value = 1200
- customHeight.value = 1500
+ customWidth.value = 3200
+ customHeight.value = 4000
  error.value = ''
  },
 )
@@ -105,7 +111,7 @@ function canvasToBlob(canvas: HTMLCanvasElement) {
  resolve(blob)
  },
  outputMime.value,
- props.backgroundMode === 'transparent' ? undefined : 0.92,
+ props.backgroundMode === 'transparent' ? undefined : JPEG_QUALITY,
  )
  })
 }
@@ -123,9 +129,33 @@ async function confirmCrop() {
  return
  }
 
+ // Never upscale a crop beyond the pixels actually available from the source.
+ // For free crop, preserve its natural aspect ratio and only cap the long edge.
+ let finalWidth = outputWidth.value
+ let finalHeight = outputHeight.value
+
+ if (ratioKey.value === 'free') {
+ const scale = Math.min(
+ 1,
+ MAX_LONG_EDGE / Math.max(sourceCanvas.width, sourceCanvas.height),
+ )
+
+ finalWidth = Math.max(1, Math.round(sourceCanvas.width * scale))
+ finalHeight = Math.max(1, Math.round(sourceCanvas.height * scale))
+ } else {
+ const scale = Math.min(
+ 1,
+ outputWidth.value / sourceCanvas.width,
+ outputHeight.value / sourceCanvas.height,
+ )
+
+ finalWidth = Math.max(1, Math.round(sourceCanvas.width * scale))
+ finalHeight = Math.max(1, Math.round(sourceCanvas.height * scale))
+ }
+
  const outputCanvas = document.createElement('canvas')
- outputCanvas.width = outputWidth.value
- outputCanvas.height = outputHeight.value
+ outputCanvas.width = finalWidth
+ outputCanvas.height = finalHeight
 
  const ctx = outputCanvas.getContext('2d')
 
@@ -136,14 +166,14 @@ async function confirmCrop() {
 
  if (props.backgroundMode === 'white') {
  ctx.fillStyle = '#ffffff'
- ctx.fillRect(0, 0, outputWidth.value, outputHeight.value)
+ ctx.fillRect(0, 0, finalWidth, finalHeight)
  } else {
- ctx.clearRect(0, 0, outputWidth.value, outputHeight.value)
+ ctx.clearRect(0, 0, finalWidth, finalHeight)
  }
 
  ctx.imageSmoothingEnabled = true
  ctx.imageSmoothingQuality = 'high'
- ctx.drawImage(sourceCanvas, 0, 0, outputWidth.value, outputHeight.value)
+ ctx.drawImage(sourceCanvas, 0, 0, finalWidth, finalHeight)
 
  const blob = await canvasToBlob(outputCanvas)
  const file = new File([blob], safeFilename(props.filename), {
@@ -156,8 +186,8 @@ async function confirmCrop() {
  emit('cropped', file, previewUrl, {
  ratio_key: ratioKey.value,
  aspect_ratio: ratioKey.value === 'free' ? 'free' : ratioKey.value,
- width: outputWidth.value,
- height: outputHeight.value,
+ width: finalWidth,
+ height: finalHeight,
  background_mode: props.backgroundMode,
  })
  } catch {
@@ -475,6 +505,12 @@ async function confirmCrop() {
  </div>
  </div>
 
+ <p
+ class="mt-3 text-[11px] leading-4 text-gray-400 dark:text-gray-600"
+ >
+ Crops are exported at high quality and are never enlarged beyond the source image.
+ </p>
+
  <div
  v-if="error"
  class="
@@ -508,6 +544,16 @@ async function confirmCrop() {
  gap-2
  "
  >
+ <AppButton
+ v-if="allowOriginal"
+ type="button"
+ variant="secondary"
+ :disabled="processing"
+ @click="emit('use-original')"
+ >
+ Use original quality
+ </AppButton>
+
  <AppButton
  type="button"
  variant="ghost"

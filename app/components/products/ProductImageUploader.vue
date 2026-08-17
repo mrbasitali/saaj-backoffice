@@ -46,6 +46,7 @@ const inputRef =
 const cropOpen = ref(false)
 const cropSource = ref('')
 const cropFilename = ref('')
+const pendingOriginalFile = ref<File | null>(null)
 
 const dragActive = ref(false)
 const fileError = ref('')
@@ -132,6 +133,7 @@ function prepareFile(
 
  cropFilename.value =
  file.name
+ pendingOriginalFile.value = file
 
  cropOpen.value = true
 }
@@ -203,6 +205,31 @@ function closeCropper() {
 
  cropSource.value = ''
  cropFilename.value = ''
+ pendingOriginalFile.value = null
+}
+
+function addOriginalImage() {
+ const file = pendingOriginalFile.value
+
+ if (!file) {
+ return
+ }
+
+ const previewUrl = URL.createObjectURL(file)
+ const shouldBePrimary = images.value.length === 0
+
+ images.value = [
+ ...images.value,
+ {
+ id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+ file,
+ preview_url: previewUrl,
+ alt_text: props.productName || '',
+ is_primary: shouldBePrimary,
+ },
+ ]
+
+ closeCropper()
 }
 
 function addCroppedImage(
@@ -385,8 +412,7 @@ onBeforeUnmount(() => {
  dark:text-gray-600
  "
  >
- Add source images and crop
- them before saving.
+ Add original-quality images. Crop only when you need to adjust framing.
  </p>
  </div>
 
@@ -1053,8 +1079,10 @@ onBeforeUnmount(() => {
  :open="cropOpen"
  :src="cropSource"
  :filename="cropFilename"
+ :allow-original="true"
  background-mode="white"
  @close="closeCropper"
+ @use-original="addOriginalImage"
  @cropped="
  addCroppedImage
  "
