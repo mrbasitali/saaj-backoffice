@@ -87,6 +87,17 @@ type ProductResponse = {
  message?: string
 }
 
+type ProductPreview = {
+ url: string
+ expires_at: string
+ expires_in_minutes: number
+}
+
+type ProductPreviewResponse = {
+ data: Product
+ preview: ProductPreview
+}
+
 type ProductSection =
  | 'details'
  | 'categories'
@@ -146,6 +157,7 @@ const studioOpen = ref(false)
 const localNotice = ref('')
 
 const saving = ref(false)
+const previewing = ref(false)
 const formError = ref('')
 const fieldErrors =
  ref<Record<string, string>>({})
@@ -693,7 +705,7 @@ function buildFormData() {
 
 async function submit(
  closeAfterSave = false,
-) {
+): Promise<Product | null> {
  saving.value = true
  formError.value = ''
  fieldErrors.value = {}
@@ -743,7 +755,11 @@ async function submit(
  response.data,
  closeAfterSave,
  )
+
+ return response.data
  }
+
+ return null
  } catch (error: any) {
  const normalized =
  normalizeErrors(error)
@@ -760,8 +776,75 @@ async function submit(
  sectionForErrors(
  normalized,
  )
+
+ return null
  } finally {
  saving.value = false
+ }
+}
+
+async function previewStorefront() {
+ if (
+ props.mode !== 'edit'
+ || !props.product
+ || previewing.value
+ || saving.value
+ ) {
+ return
+ }
+
+ if (!import.meta.client) {
+ return
+ }
+
+ const previewWindow = window.open(
+ 'about:blank',
+ '_blank',
+ )
+
+ if (!previewWindow) {
+ localNotice.value =
+ 'Your browser blocked the preview window. Allow pop-ups for Backoffice and try again.'
+ return
+ }
+
+ previewing.value = true
+ formError.value = ''
+
+ try {
+ previewWindow.document.title =
+ 'Preparing SAAJ preview…'
+ previewWindow.document.body.innerHTML =
+ '<div style="font-family:system-ui;padding:32px;color:#111">Preparing storefront preview…</div>'
+
+ // Save first so the preview always reflects the latest form changes, even
+ // while the product remains a draft or is scheduled for later.
+ const savedProduct =
+ await submit(false)
+
+ if (!savedProduct) {
+ previewWindow.close()
+ return
+ }
+
+ const response =
+ await $api<ProductPreviewResponse>(
+ `/admin/products/${savedProduct.id}`,
+ )
+
+ previewWindow.opener = null
+ previewWindow.location.replace(
+ response.preview.url,
+ )
+ } catch (error: any) {
+ previewWindow.close()
+ formError.value =
+ String(
+ error?.data?.message
+ || 'Could not create storefront preview. Please try again.',
+ )
+ } finally {
+ previewing.value = false
  }
 }
 </script>
@@ -1450,10 +1533,21 @@ async function submit(
  <AppButton
  type="button"
  variant="ghost"
- :disabled="saving"
+ :disabled="saving || previewing"
  @click="emit('close')"
  >
  Done
+ </AppButton>
+
+ <AppButton
+ v-if="mode === 'edit' && product"
+ type="button"
+ variant="secondary"
+ :loading="previewing"
+ :disabled="saving"
+ @click="previewStorefront"
+ >
+ Preview storefront
  </AppButton>
 
  <AppButton
