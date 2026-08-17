@@ -18,6 +18,7 @@ const props = withDefaults(defineProps<{
  filename: string
  backgroundMode?: BackgroundMode
  allowOriginal?: boolean
+ contextLabel?: string
 }>(), {
  backgroundMode: 'white',
  allowOriginal: false,
@@ -271,6 +272,13 @@ async function confirmCrop() {
  "
  >
  <div>
+ <div
+ v-if="contextLabel"
+ class="mb-2 inline-flex rounded-full bg-gray-950/[0.055] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-gray-500 dark:bg-white/[0.07] dark:text-gray-400"
+ >
+ {{ contextLabel }}
+ </div>
+
  <h3
  class="
  text-[13px]

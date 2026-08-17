@@ -18,13 +18,16 @@ export type ProductImageDraft = {
  crop_meta?: CropMeta
 }
 
+type PendingBatchItem = {
+ id: string
+ file: File
+ preview_url: string
+}
+
 const props = withDefaults(
  defineProps<{
- modelValue:
- ProductImageDraft[]
-
+ modelValue: ProductImageDraft[]
  productName?: string
-
  maxImages?: number
  }>(),
  {
@@ -34,54 +37,63 @@ const props = withDefaults(
 )
 
 const emit = defineEmits<{
- 'update:modelValue': [
- items:
- ProductImageDraft[],
- ]
+ 'update:modelValue': [items: ProductImageDraft[]]
 }>()
 
-const inputRef =
- ref<HTMLInputElement | null>(null)
+const MAX_FILE_BYTES = 15 * 1024 * 1024
+const ALLOWED_TYPES = [
+ 'image/jpeg',
+ 'image/png',
+ 'image/webp',
+]
+
+const inputRef = ref<HTMLInputElement | null>(null)
 
 const cropOpen = ref(false)
 const cropSource = ref('')
 const cropFilename = ref('')
 const pendingOriginalFile = ref<File | null>(null)
 
+const pendingBatchItems = ref<PendingBatchItem[]>([])
+const cropQueue = ref<File[]>([])
+const batchCropTotal = ref(0)
+const batchCropCompleted = ref(0)
+
 const dragActive = ref(false)
 const fileError = ref('')
+const fileNotice = ref('')
 
 const images = computed({
- get: () =>
- props.modelValue,
-
- set: (
- value:
- ProductImageDraft[],
- ) => {
- emit(
- 'update:modelValue',
- value,
- )
+ get: () => props.modelValue,
+ set: (value: ProductImageDraft[]) => {
+ emit('update:modelValue', value)
  },
 })
 
-const canAddMore =
- computed(
- () =>
- images.value.length
- < props.maxImages,
+const canAddMore = computed(() => {
+ return images.value.length < props.maxImages
+})
+
+const remainingSlots = computed(() => {
+ return Math.max(0, props.maxImages - images.value.length)
+})
+
+const batchCropLabel = computed(() => {
+ if (batchCropTotal.value <= 1) {
+ return ''
+ }
+
+ const current = Math.min(
+ batchCropCompleted.value + 1,
+ batchCropTotal.value,
  )
 
-const remainingSlots =
- computed(() => {
- return Math.max(
- 0,
+ return `Batch image ${current} of ${batchCropTotal.value}`
+})
 
- props.maxImages
- - images.value.length,
- )
- })
+function uniqueId() {
+ return `${Date.now()}-${Math.random().toString(16).slice(2)}`
+}
 
 function openFilePicker() {
  if (!canAddMore.value) {
@@ -91,71 +103,139 @@ function openFilePicker() {
  inputRef.value?.click()
 }
 
-function prepareFile(
- file: File,
-) {
- fileError.value = ''
+function fileKey(file: File) {
+ return `${file.name}:${file.size}:${file.lastModified}`
+}
 
- if (!canAddMore.value) {
- fileError.value =
- `Maximum ${props.maxImages} images allowed.`
-
- return
+function validateFile(file: File) {
+ if (!ALLOWED_TYPES.includes(file.type)) {
+ return 'Use JPG, PNG or WebP images.'
  }
 
- const allowedTypes = [
- 'image/jpeg',
- 'image/png',
- 'image/webp',
- ]
-
- if (
- !allowedTypes.includes(
- file.type,
- )
- ) {
- fileError.value =
- 'Use JPG, PNG or WebP images.'
-
- return
+ if (file.size > MAX_FILE_BYTES) {
+ return `${file.name} is larger than 15 MB.`
  }
 
- if (cropSource.value) {
- URL.revokeObjectURL(
- cropSource.value,
- )
- }
+ return ''
+}
 
- cropSource.value =
- URL.createObjectURL(
+function revokePendingBatchPreviews() {
+ pendingBatchItems.value.forEach((item) => {
+ URL.revokeObjectURL(item.preview_url)
+ })
+
+ pendingBatchItems.value = []
+}
+
+function clearBatchSelection() {
+ revokePendingBatchPreviews()
+ fileNotice.value = ''
+}
+
+function setBatchSelection(files: File[]) {
+ revokePendingBatchPreviews()
+
+ pendingBatchItems.value = files.map((file) => ({
+ id: uniqueId(),
  file,
- )
+ preview_url: URL.createObjectURL(file),
+ }))
+}
 
- cropFilename.value =
- file.name
+function startCropForFile(file: File) {
+ if (cropSource.value) {
+ URL.revokeObjectURL(cropSource.value)
+ }
+
+ cropSource.value = URL.createObjectURL(file)
+ cropFilename.value = file.name
  pendingOriginalFile.value = file
-
  cropOpen.value = true
 }
 
-function onFileChange(
- event: Event,
-) {
+function handleFiles(inputFiles: File[]) {
+ fileError.value = ''
+ fileNotice.value = ''
+
+ if (!canAddMore.value) {
+ fileError.value = `Maximum ${props.maxImages} images allowed.`
+ return
+ }
+
+ const existingKeys = new Set(
+ images.value.map((item) => fileKey(item.file)),
+ )
+
+ const seen = new Set<string>()
+ const valid: File[] = []
+ const errors: string[] = []
+ let duplicateCount = 0
+
+ inputFiles.forEach((file) => {
+ const validationError = validateFile(file)
+
+ if (validationError) {
+ errors.push(validationError)
+ return
+ }
+
+ const key = fileKey(file)
+
+ if (existingKeys.has(key) || seen.has(key)) {
+ duplicateCount += 1
+ return
+ }
+
+ seen.add(key)
+ valid.push(file)
+ })
+
+ const accepted = valid.slice(0, remainingSlots.value)
+ const overflow = Math.max(0, valid.length - accepted.length)
+
+ if (!accepted.length) {
+ fileError.value = errors[0]
+ || (duplicateCount ? 'Those images are already selected.' : 'No usable images were selected.')
+ return
+ }
+
+ const notes: string[] = []
+
+ if (duplicateCount) {
+ notes.push(`${duplicateCount} duplicate${duplicateCount === 1 ? '' : 's'} skipped`)
+ }
+
+ if (overflow) {
+ notes.push(`${overflow} image${overflow === 1 ? '' : 's'} skipped because only ${remainingSlots.value} slots were available`)
+ }
+
+ if (errors.length) {
+ notes.push(`${errors.length} invalid image${errors.length === 1 ? '' : 's'} skipped`)
+ }
+
+ fileNotice.value = notes.join(' · ')
+
+ if (accepted.length === 1) {
+ clearBatchSelection()
+ startCropForFile(accepted[0]!)
+ return
+ }
+
+ setBatchSelection(accepted)
+}
+
+function onFileChange(event: Event) {
  const input = event.target as HTMLInputElement
+ const files = Array.from(input.files ?? [])
 
- const file =
- input.files?.[0]
-
- if (file) {
- prepareFile(file)
+ if (files.length) {
+ handleFiles(files)
  }
 
  input.value = ''
 }
 
-function onDragOver(
- event: DragEvent,
-) {
+function onDragOver(event: DragEvent) {
  event.preventDefault()
 
  if (!canAddMore.value) {
@@ -165,8 +245,7 @@ function onDragOver(
  dragActive.value = true
 
  if (event.dataTransfer) {
- event.dataTransfer.dropEffect =
- 'copy'
+ event.dataTransfer.dropEffect = 'copy'
  }
 }
 
@@ -174,38 +253,121 @@ function onDragLeave() {
  dragActive.value = false
 }
 
-function onDrop(
- event: DragEvent,
-) {
+function onDrop(event: DragEvent) {
  event.preventDefault()
-
  dragActive.value = false
 
  if (!canAddMore.value) {
  return
  }
 
- const file =
- event.dataTransfer
- ?.files?.[0]
+ const files = Array.from(event.dataTransfer?.files ?? [])
 
- if (file) {
- prepareFile(file)
+ if (files.length) {
+ handleFiles(files)
  }
 }
 
-function closeCropper() {
+function releaseCurrentCrop() {
  cropOpen.value = false
 
  if (cropSource.value) {
- URL.revokeObjectURL(
- cropSource.value,
- )
+ URL.revokeObjectURL(cropSource.value)
  }
 
  cropSource.value = ''
  cropFilename.value = ''
  pendingOriginalFile.value = null
+}
+
+function resetBatchCrop() {
+ cropQueue.value = []
+ batchCropTotal.value = 0
+ batchCropCompleted.value = 0
+}
+
+function openNextQueuedCrop() {
+ const next = cropQueue.value.shift()
+
+ if (!next) {
+ resetBatchCrop()
+ return
+ }
+
+ startCropForFile(next)
+}
+
+function cancelCropper() {
+ releaseCurrentCrop()
+ resetBatchCrop()
+}
+
+function finishCurrentCrop() {
+ const hadBatch = batchCropTotal.value > 1
+
+ releaseCurrentCrop()
+
+ if (!hadBatch) {
+ return
+ }
+
+ batchCropCompleted.value += 1
+
+ if (cropQueue.value.length) {
+ nextTick(() => openNextQueuedCrop())
+ return
+ }
+
+ resetBatchCrop()
+}
+
+function makeDraft(file: File, previewUrl?: string, cropMeta?: CropMeta): ProductImageDraft {
+ return {
+ id: uniqueId(),
+ file,
+ preview_url: previewUrl || URL.createObjectURL(file),
+ alt_text: props.productName || '',
+ is_primary: false,
+ crop_meta: cropMeta,
+ }
+}
+
+function addBatchOriginals() {
+ if (!pendingBatchItems.value.length) {
+ return
+ }
+
+ const shouldSetPrimary = images.value.length === 0
+
+ const additions = pendingBatchItems.value.map((item, index) => ({
+ id: uniqueId(),
+ file: item.file,
+ preview_url: item.preview_url,
+ alt_text: props.productName || '',
+ is_primary: shouldSetPrimary && index === 0,
+ }))
+
+ // Ownership of the preview URLs moves to the image drafts,
+ // so clear the array without revoking them.
+ pendingBatchItems.value = []
+ images.value = [...images.value, ...additions]
+ fileNotice.value = `${additions.length} images added at original quality.`
+}
+
+function startBatchCrop() {
+ if (!pendingBatchItems.value.length) {
+ return
+ }
+
+ const files = pendingBatchItems.value.map((item) => item.file)
+ revokePendingBatchPreviews()
+
+ cropQueue.value = [...files]
+ batchCropTotal.value = files.length
+ batchCropCompleted.value = 0
+ fileNotice.value = ''
+
+ openNextQueuedCrop()
 }
 
 function addOriginalImage() {
@@ -215,85 +377,37 @@ function addOriginalImage() {
  return
  }
 
- const previewUrl = URL.createObjectURL(file)
- const shouldBePrimary = images.value.length === 0
+ const draft = makeDraft(file)
 
- images.value = [
- ...images.value,
- {
- id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
- file,
- preview_url: previewUrl,
- alt_text: props.productName || '',
- is_primary: shouldBePrimary,
- },
- ]
+ if (images.value.length === 0) {
+ draft.is_primary = true
+ }
 
- closeCropper()
+ images.value = [...images.value, draft]
+ finishCurrentCrop()
 }
 
-function addCroppedImage(
- file: File,
- previewUrl: string,
- meta?: CropMeta,
-) {
- const shouldBePrimary =
- images.value.length === 0
+function addCroppedImage(file: File, previewUrl: string, meta?: CropMeta) {
+ const draft = makeDraft(file, previewUrl, meta)
 
- images.value = [
- ...images.value,
+ if (images.value.length === 0) {
+ draft.is_primary = true
+ }
 
- {
- id:
- `${Date.now()}-${
- Math.random()
- .toString(16)
- .slice(2)
- }`,
-
- file,
-
- preview_url:
- previewUrl,
-
- alt_text:
- props.productName
- || '',
-
- is_primary:
- shouldBePrimary,
-
- crop_meta: meta,
- },
- ]
-
- closeCropper()
+ images.value = [...images.value, draft]
+ finishCurrentCrop()
 }
 
-function setPrimary(
- id: string,
-) {
- images.value =
- images.value.map(
- (item) => ({
+function setPrimary(id: string) {
+ images.value = images.value.map((item) => ({
  ...item,
-
- is_primary:
- item.id === id,
- }),
- )
+ is_primary: item.id === id,
+ }))
 }
 
-function updateAltText(
- id: string,
- value: string,
-) {
- images.value =
- images.value.map(
- (item) => {
- if (
- item.id !== id
- ) {
+function updateAltText(id: string, value: string) {
+ images.value = images.value.map((item) => {
+ if (item.id !== id) {
  return item
  }
 
@@ -301,59 +415,35 @@ function updateAltText(
  ...item,
  alt_text: value,
  }
- },
- )
+ })
 }
 
-function removeImage(
- id: string,
-) {
- const removing =
- images.value.find(
- (item) =>
- item.id === id,
- )
+function removeImage(id: string) {
+ const removing = images.value.find((item) => item.id === id)
 
- if (
- removing?.preview_url
- ) {
- URL.revokeObjectURL(
- removing.preview_url,
- )
+ if (removing?.preview_url) {
+ URL.revokeObjectURL(removing.preview_url)
  }
 
- const remaining =
- images.value.filter(
- (item) =>
- item.id !== id,
- )
+ const remaining = images.value.filter((item) => item.id !== id)
 
- if (
- remaining.length
- && !remaining.some(
- (item) =>
- item.is_primary,
- )
- ) {
- const first =
- remaining[0]
+ if (remaining.length && !remaining.some((item) => item.is_primary)) {
+ const first = remaining[0]
 
  if (first) {
  first.is_primary = true
  }
  }
 
- images.value = [
- ...remaining,
- ]
+ images.value = [...remaining]
 }
 
 onBeforeUnmount(() => {
  if (cropSource.value) {
- URL.revokeObjectURL(
- cropSource.value,
- )
+ URL.revokeObjectURL(cropSource.value)
  }
+
+ revokePendingBatchPreviews()
 })
 </script>
 
@@ -412,7 +502,7 @@ onBeforeUnmount(() => {
  dark:text-gray-600
  "
  >
- Add original-quality images. Crop only when you need to adjust framing.
+ Select several originals at once. Keep original quality or review crops one by one.
  </p>
  </div>
 
@@ -421,7 +511,7 @@ onBeforeUnmount(() => {
  type="button"
  size="sm"
  variant="secondary"
- :disabled="!canAddMore"
+ :disabled="!canAddMore || pendingBatchItems.length > 0"
  @click="openFilePicker"
  >
  <svg
@@ -443,18 +533,15 @@ onBeforeUnmount(() => {
  />
  </svg>
 
- Add image
+ Add images
  </AppButton>
  </div>
 
  <input
  ref="inputRef"
  type="file"
- accept="
- image/jpeg,
- image/png,
- image/webp
- "
+ multiple
+ accept="image/jpeg,image/png,image/webp"
  class="hidden"
  @change="onFileChange"
  >
@@ -480,10 +567,94 @@ onBeforeUnmount(() => {
  {{ fileError }}
  </div>
 
+ <div
+ v-if="fileNotice"
+ class="
+ rounded-[10px]
+ bg-emerald-500/[0.07]
+ px-3
+ py-2.5
+ text-[11px]
+ font-medium
+ text-emerald-700
+ dark:bg-emerald-500/10
+ dark:text-emerald-400
+ "
+ >
+ {{ fileNotice }}
+ </div>
+
+ <!-- Bulk selection review -->
+ <div
+ v-if="pendingBatchItems.length"
+ class="
+ rounded-[14px]
+ bg-gray-950/[0.03]
+ p-3.5
+ dark:bg-white/[0.04]
+ "
+ >
+ <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+ <div>
+ <div class="flex items-center gap-2">
+ <h4 class="text-[12px] font-semibold text-gray-800 dark:text-gray-200">
+ {{ pendingBatchItems.length }} images selected
+ </h4>
+ <span class="rounded-full bg-gray-950/[0.06] px-2 py-0.5 text-[10px] font-medium text-gray-500 dark:bg-white/[0.07] dark:text-gray-400">
+ Bulk upload
+ </span>
+ </div>
+ <p class="mt-1 text-[11px] leading-4 text-gray-400 dark:text-gray-600">
+ Add them untouched for maximum quality, or review the crop for each image.
+ </p>
+ </div>
+
+ <button
+ type="button"
+ class="text-[11px] font-medium text-gray-400 transition hover:text-red-500 dark:text-gray-600 dark:hover:text-red-400"
+ @click="clearBatchSelection"
+ >
+ Clear selection
+ </button>
+ </div>
+
+ <div class="mt-3 flex gap-2 overflow-x-auto pb-1">
+ <div
+ v-for="item in pendingBatchItems"
+ :key="item.id"
+ class="relative h-20 w-16 shrink-0 overflow-hidden rounded-[9px] bg-gray-100 dark:bg-white/[0.06]"
+ >
+ <img :src="item.preview_url" :alt="item.file.name" class="h-full w-full object-cover">
+ </div>
+ </div>
+
+ <div class="mt-3 flex flex-col gap-2 sm:flex-row">
+ <AppButton
+ type="button"
+ size="sm"
+ class="sm:min-w-[190px]"
+ @click="addBatchOriginals"
+ >
+ Add all as originals
+ </AppButton>
+
+ <AppButton
+ type="button"
+ size="sm"
+ variant="secondary"
+ class="sm:min-w-[190px]"
+ @click="startBatchCrop"
+ >
+ Review & crop one by one
+ </AppButton>
+ </div>
+ </div>
+
  <!-- Empty upload surface -->
  <button
  v-if="
  images.length === 0
+ && !pendingBatchItems.length
  "
  type="button"
  class="
@@ -605,7 +776,7 @@ onBeforeUnmount(() => {
  dark:text-gray-300
  "
  >
- Drop an image here
+ Drop product images here
  or click to browse
  </p>
 
@@ -620,9 +791,8 @@ onBeforeUnmount(() => {
  dark:text-gray-600
  "
  >
- JPG, PNG or WebP.
- You’ll crop it before
- adding it.
+ JPG, PNG or WebP · up to 15 MB each.
+ Select multiple files for bulk upload.
  </p>
  </div>
  </button>
@@ -1055,7 +1225,7 @@ onBeforeUnmount(() => {
  dark:text-gray-400
  "
  >
- Add another
+ Add more
  </p>
 
  <p
@@ -1081,7 +1251,8 @@ onBeforeUnmount(() => {
  :filename="cropFilename"
  :allow-original="true"
  background-mode="white"
- @close="closeCropper"
+ :context-label="batchCropLabel"
+ @close="cancelCropper"
  @use-original="addOriginalImage"
  @cropped="
  addCroppedImage
