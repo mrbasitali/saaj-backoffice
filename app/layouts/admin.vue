@@ -1,5 +1,22 @@
 <script setup lang="ts">
 const auth = useAuthStore()
+const { $api } = useNuxtApp()
+const unreadOnlineOrders = useState<number>('admin-unread-online-orders', () => 0)
+let unreadTimer: ReturnType<typeof setInterval> | null = null
+
+async function refreshUnreadOnlineOrders() {
+  try {
+    const response = await $api<{ unread_count: number }>('/admin/sale-invoices/unread-count')
+    unreadOnlineOrders.value = Number(response.unread_count || 0)
+  } catch {
+    // Keep the last known count. A transient polling failure should never
+    // interrupt the rest of the backoffice.
+  }
+}
+
+function handleVisibilityChange() {
+  if (document.visibilityState === 'visible') refreshUnreadOnlineOrders()
+}
 
 const logoutConfirmOpen = ref(false)
 
@@ -224,6 +241,15 @@ const pageTitle = computed(() => {
 onMounted(() => {
  sidebarCollapsed.value =
  localStorage.getItem('saaj_sidebar_collapsed') === '1'
+
+ refreshUnreadOnlineOrders()
+ unreadTimer = setInterval(refreshUnreadOnlineOrders, 30000)
+ document.addEventListener('visibilitychange', handleVisibilityChange)
+})
+
+onBeforeUnmount(() => {
+ if (unreadTimer) clearInterval(unreadTimer)
+ document.removeEventListener('visibilitychange', handleVisibilityChange)
 })
 
 watch(sidebarCollapsed, (value) => {
@@ -511,6 +537,7 @@ watch(
  :to="link.to"
  class="
  group
+ relative
 
  flex
  h-9
@@ -599,6 +626,13 @@ watch(
  "
  >
  {{ link.label }}
+ </span>
+ <span
+ v-if="link.to === '/sale-invoices' && unreadOnlineOrders > 0"
+ class="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-rose-500 px-1.5 text-[9px] font-bold tabular-nums text-white"
+ :class="sidebarCollapsed ? 'lg:absolute lg:right-0 lg:top-0 lg:h-2.5 lg:min-w-2.5 lg:p-0 lg:text-[0px]' : ''"
+ >
+ {{ unreadOnlineOrders > 99 ? '99+' : unreadOnlineOrders }}
  </span>
  </NuxtLink>
  </div>
@@ -899,6 +933,15 @@ watch(
  gap-1.5
  "
  >
+ <NuxtLink
+ v-if="unreadOnlineOrders > 0"
+ to="/sale-invoices?unread=1"
+ class="hidden h-9 items-center gap-2 rounded-[10px] bg-rose-500/[0.09] px-3 text-[12px] font-semibold text-rose-700 transition hover:bg-rose-500/[0.14] dark:bg-rose-500/10 dark:text-rose-300 sm:inline-flex"
+ >
+ <span class="h-2 w-2 rounded-full bg-rose-500 shadow-[0_0_0_4px_rgba(244,63,94,0.10)]" />
+ {{ unreadOnlineOrders }} new {{ unreadOnlineOrders === 1 ? 'order' : 'orders' }}
+ </NuxtLink>
+
  <NuxtLink
  to="/sale-invoices"
  class="

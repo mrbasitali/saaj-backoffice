@@ -23,6 +23,7 @@ type Settings = {
   stacked_product_gallery_enabled: boolean
   editorial_gallery_padding_enabled: boolean
   direct_buy_now_enabled: boolean
+  admin_order_notification_emails: string[]
   social_facebook_enabled: boolean
   social_facebook_url: string | null
   social_instagram_enabled: boolean
@@ -61,6 +62,7 @@ const form = reactive<Settings>({
   stacked_product_gallery_enabled: false,
   editorial_gallery_padding_enabled: true,
   direct_buy_now_enabled: false,
+  admin_order_notification_emails: [],
   social_facebook_enabled: false,
   social_facebook_url: null,
   social_instagram_enabled: false,
@@ -126,6 +128,35 @@ onBeforeUnmount(() => {
 const saving = ref(false)
 const formError = ref('')
 const success = ref(false)
+const adminNotificationEmail = ref('')
+
+function addAdminNotificationEmail() {
+  const email = adminNotificationEmail.value.trim().toLowerCase()
+  if (!email) return
+
+  const looksLikeEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+  if (!looksLikeEmail) {
+    formError.value = 'Enter a valid notification email address.'
+    return
+  }
+
+  if (form.admin_order_notification_emails.length >= 10) {
+    formError.value = 'You can add up to 10 notification recipients.'
+    return
+  }
+
+  if (!form.admin_order_notification_emails.some(item => item.toLowerCase() === email)) {
+    form.admin_order_notification_emails.push(email)
+  }
+
+  adminNotificationEmail.value = ''
+  formError.value = ''
+}
+
+function removeAdminNotificationEmail(index: number) {
+  form.admin_order_notification_emails.splice(index, 1)
+}
+
 
 function buildFormData() {
   const body = new FormData()
@@ -169,6 +200,7 @@ function buildFormData() {
   body.append('stacked_product_gallery_enabled', form.stacked_product_gallery_enabled ? '1' : '0')
   body.append('editorial_gallery_padding_enabled', form.editorial_gallery_padding_enabled ? '1' : '0')
   body.append('direct_buy_now_enabled', form.direct_buy_now_enabled ? '1' : '0')
+  body.append('admin_order_notification_emails', JSON.stringify(form.admin_order_notification_emails))
 
   const socialPlatforms = ['facebook', 'instagram', 'tiktok', 'youtube', 'whatsapp', 'twitter']
 
@@ -447,6 +479,44 @@ const socialConfig = [
               placeholder="Bank name, account title, IBAN, payment instructions…"
             />
           </div>
+        </div>
+      </AppCard>
+
+      <AppCard class="p-5 sm:p-6">
+        <div>
+          <p class="text-sm font-semibold text-gray-950 dark:text-white">New online order notifications</p>
+          <p class="mt-1 max-w-2xl text-[13px] leading-5 text-gray-400 dark:text-gray-500">
+            Add one or more inboxes that should receive the complete order summary whenever a customer places an order on the website.
+          </p>
+        </div>
+
+        <div class="mt-5 rounded-[14px] bg-gray-950/[0.025] p-4 dark:bg-white/[0.035]">
+          <div class="flex flex-col gap-3 sm:flex-row">
+            <input
+              v-model.trim="adminNotificationEmail"
+              type="email"
+              autocomplete="email"
+              placeholder="orders@saaj.pk"
+              class="min-h-11 flex-1 rounded-[10px] border border-gray-950/10 bg-white px-3.5 text-[13px] text-gray-900 outline-none transition focus:border-gray-950/30 dark:border-white/10 dark:bg-white/[0.04] dark:text-white dark:focus:border-white/25"
+              @keydown.enter.prevent="addAdminNotificationEmail"
+            >
+            <AppButton type="button" variant="secondary" @click="addAdminNotificationEmail">Add recipient</AppButton>
+          </div>
+
+          <div v-if="form.admin_order_notification_emails.length" class="mt-4 flex flex-wrap gap-2">
+            <span
+              v-for="(email, index) in form.admin_order_notification_emails"
+              :key="email"
+              class="inline-flex items-center gap-2 rounded-full bg-violet-500/[0.09] px-3 py-1.5 text-[11px] font-medium text-violet-700 dark:bg-violet-500/10 dark:text-violet-300"
+            >
+              {{ email }}
+              <button type="button" class="flex h-5 w-5 items-center justify-center rounded-full transition hover:bg-black/5 dark:hover:bg-white/10" :aria-label="`Remove ${email}`" @click="removeAdminNotificationEmail(index)">×</button>
+            </span>
+          </div>
+          <p v-else class="mt-4 text-[12px] leading-5 text-gray-400 dark:text-gray-500">
+            No recipients added. New-order admin emails are currently off; unread-order indicators in Backoffice still work.
+          </p>
+          <p class="mt-3 text-[11px] leading-5 text-gray-400 dark:text-gray-500">Maximum 10 recipients. Each receives product details, quantities, delivery address and the full order total.</p>
         </div>
       </AppCard>
 

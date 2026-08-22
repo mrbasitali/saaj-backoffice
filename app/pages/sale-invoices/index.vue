@@ -82,6 +82,9 @@ type SaleInvoice = {
  payment_method?: string | null
  customer_name: string | null
  customer_phone: string | null
+ customer_email?: string | null
+ is_unread?: boolean
+ read_at?: string | null
  shipping_recipient_name?: string | null
  shipping_recipient_phone?: string | null
  shipping_address_line1?: string | null
@@ -151,6 +154,23 @@ type InventoryStockIndexResponse = {
 }
 
 const { $api } = useNuxtApp()
+const route = useRoute()
+const unreadOnlineOrders = useState<number>('admin-unread-online-orders', () => 0)
+const unreadOnly = ref(route.query.unread === '1')
+const markingAllRead = ref(false)
+
+watch(() => route.query.unread, value => {
+ unreadOnly.value = value === '1'
+})
+
+async function refreshUnreadCount() {
+ try {
+  const response = await $api<{ unread_count: number }>('/admin/sale-invoices/unread-count')
+  unreadOnlineOrders.value = Number(response.unread_count || 0)
+ } catch {
+  // Keep the last known count.
+ }
+}
 
 const search = ref('')
 const debouncedSearch = ref('')
@@ -255,6 +275,7 @@ watch([
  dateTo,
  sortBy,
  perPage,
+ unreadOnly,
 ], () => {
  page.value = 1
 }, { deep: true })
@@ -275,6 +296,7 @@ function buildQuery() {
  if (selectedBalanceStatuses.value.length) query.balance_statuses = selectedBalanceStatuses.value.join(',')
  if (dateFrom.value) query.date_from = dateFrom.value
  if (dateTo.value) query.date_to = dateTo.value
+ if (unreadOnly.value) query.unread = 1
 
  return query
 }
@@ -347,6 +369,7 @@ const {
  sortBy,
  perPage,
  page,
+ unreadOnly,
  ],
  immediate: true,
  },
@@ -396,7 +419,8 @@ const hasActiveFilters = computed(() => {
  || dateFrom.value
  || dateTo.value
  || sortBy.value !== 'latest'
- || perPage.value !== 20,
+ || perPage.value !== 20
+ || unreadOnly.value,
  )
 })
 
@@ -414,6 +438,7 @@ const visibleFilterCount = computed(() => {
  if (dateTo.value) count++
  if (sortBy.value !== 'latest') count++
  if (perPage.value !== 20) count++
+ if (unreadOnly.value) count++
 
  return count
 })
@@ -499,7 +524,6 @@ function showNotice(message: string) {
 
 async function fetchInvoice(invoiceId: number) {
  const response = await $api<SaleInvoiceResponse>(`/admin/sale-invoices/${invoiceId}`)
-
  return response.data
 }
 
@@ -574,12 +598,14 @@ function printThermalReceipt(invoice: SaleInvoice, paper: '80' | '58' = '80') {
  )
 }
 
-function setQuickView(view: 'all' | 'draft' | 'completed' | 'unpaid' | 'partial' | 'paid' | 'balance') {
+function setQuickView(view: 'all' | 'new' | 'draft' | 'completed' | 'unpaid' | 'partial' | 'paid' | 'balance') {
  selectedStatuses.value = []
  selectedPaymentStatuses.value = []
  selectedBalanceStatuses.value = []
+ unreadOnly.value = false
 
  if (view === 'all') return
+ if (view === 'new') { unreadOnly.value = true; return }
  if (view === 'draft') selectedStatuses.value = ['draft']
  if (view === 'completed') selectedStatuses.value = ['completed']
  if (view === 'unpaid') selectedPaymentStatuses.value = ['unpaid']
@@ -588,9 +614,11 @@ function setQuickView(view: 'all' | 'draft' | 'completed' | 'unpaid' | 'partial'
  if (view === 'balance') selectedBalanceStatuses.value = ['with_balance']
 }
 
-function quickViewIsActive(view: 'all' | 'draft' | 'completed' | 'unpaid' | 'partial' | 'paid' | 'balance') {
+function quickViewIsActive(view: 'all' | 'new' | 'draft' | 'completed' | 'unpaid' | 'partial' | 'paid' | 'balance') {
+ if (view === 'new') return unreadOnly.value
  if (view === 'all') {
- return selectedStatuses.value.length === 0
+ return !unreadOnly.value
+ && selectedStatuses.value.length === 0
  && selectedPaymentStatuses.value.length === 0
  && selectedBalanceStatuses.value.length === 0
  }
@@ -721,7 +749,36 @@ function clearFilters() {
  dateTo.value = ''
  sortBy.value = 'latest'
  perPage.value = 20
+ unreadOnly.value = false
  page.value = 1
+}
+
+async function markOrderRead(invoice: SaleInvoice) {
+ if (!invoice.is_unread) return
+ try {
+  const response = await $api<{ message: string, unread_count: number, data: SaleInvoice }>(`/admin/sale-invoices/${invoice.id}/mark-read`, { method: 'POST' })
+  invoice.is_unread = false
+  invoice.read_at = response.data?.read_at ?? new Date().toISOString()
+  unreadOnlineOrders.value = Number(response.unread_count || 0)
+  if (unreadOnly.value) await refresh()
+ } catch (error: any) {
+  showNotice(extractApiErrorMessage(error, 'Could not mark this order as read.'))
+ }
+}
+
+async function markAllOnlineOrdersRead() {
+ if (!unreadOnlineOrders.value || markingAllRead.value) return
+ markingAllRead.value = true
+ try {
+  const response = await $api<{ message: string, unread_count: number }>('/admin/sale-invoices/mark-all-read', { method: 'POST' })
+  unreadOnlineOrders.value = Number(response.unread_count || 0)
+  showNotice(response.message || 'All online orders marked as read.')
+  await refresh()
+ } catch (error: any) {
+  showNotice(extractApiErrorMessage(error, 'Could not mark orders as read.'))
+ } finally {
+  markingAllRead.value = false
+ }
 }
 
 async function refreshAll() {
@@ -761,6 +818,15 @@ function nextPage() {
  description="Create sales for customers or walk-ins, complete invoices, deduct stock and update customer receivable balance."
  >
  <template #actions>
+ <AppButton
+ v-if="unreadOnlineOrders > 0"
+ variant="secondary"
+ :loading="markingAllRead"
+ @click="markAllOnlineOrdersRead"
+ >
+ Mark all read · {{ unreadOnlineOrders }}
+ </AppButton>
+
  <AppButton
  variant="secondary"
  :loading="pending || bootstrapPending"
@@ -880,6 +946,17 @@ function nextPage() {
  @click="setQuickView('all')"
  >
  All
+ </button>
+
+ <button
+ type="button"
+ class="inline-flex items-center gap-2 rounded-[8px] px-3 py-2 text-[12px] font-medium transition"
+ :class="quickViewIsActive('new') ? 'bg-rose-500 text-white' : 'bg-rose-500/[0.08] text-rose-700 hover:bg-rose-500/[0.13] dark:bg-rose-500/10 dark:text-rose-300'"
+ @click="setQuickView('new')"
+ >
+ <span v-if="unreadOnlineOrders > 0" class="h-1.5 w-1.5 rounded-full bg-current" />
+ New online
+ <span v-if="unreadOnlineOrders > 0" class="tabular-nums">{{ unreadOnlineOrders }}</span>
  </button>
 
  <button
@@ -1122,6 +1199,7 @@ function nextPage() {
  <AppBadge :variant="channelVariant(invoice.channel)">
  {{ label(invoice.channel) }}
  </AppBadge>
+ <span v-if="invoice.is_unread" class="inline-flex items-center gap-1 rounded-full bg-rose-500/[0.09] px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.08em] text-rose-700 dark:bg-rose-500/10 dark:text-rose-300"><span class="h-1.5 w-1.5 rounded-full bg-rose-500" />New</span>
 
  <span class="text-xs text-gray-400 dark:text-gray-500">
  {{ dateLabel(invoice.sale_date) }}
@@ -1242,6 +1320,12 @@ function nextPage() {
  <AppActionMenu>
  <template #default="{ close }">
  <AppActionMenuItem
+ v-if="invoice.is_unread"
+ @click="markOrderRead(invoice); close()"
+ >
+ Mark as read
+ </AppActionMenuItem>
+ <AppActionMenuItem
  v-if="invoice.channel === 'online'"
  @click="askUpdateStatus(invoice); close()"
  >
@@ -1309,6 +1393,7 @@ function nextPage() {
  <AppBadge :variant="channelVariant(invoice.channel)">
  {{ label(invoice.channel) }}
  </AppBadge>
+ <span v-if="invoice.is_unread" class="inline-flex items-center gap-1 rounded-full bg-rose-500/[0.09] px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.08em] text-rose-700 dark:bg-rose-500/10 dark:text-rose-300"><span class="h-1.5 w-1.5 rounded-full bg-rose-500" />New</span>
 
  <AppBadge :variant="statusVariant(invoice.status)">
  {{ label(invoice.status) }}
@@ -1409,6 +1494,12 @@ function nextPage() {
 
  <AppActionMenu class="col-span-2">
  <template #default="{ close }">
+ <AppActionMenuItem
+ v-if="invoice.is_unread"
+ @click="markOrderRead(invoice); close()"
+ >
+ Mark as read
+ </AppActionMenuItem>
  <AppActionMenuItem
  v-if="invoice.channel === 'online'"
  @click="askUpdateStatus(invoice); close()"

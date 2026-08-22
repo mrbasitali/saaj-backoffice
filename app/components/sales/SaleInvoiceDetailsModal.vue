@@ -54,6 +54,7 @@ type SaleInvoice = {
  payment_status: string
  customer_name: string | null
  customer_phone: string | null
+ customer_email?: string | null
  subtotal: string | number
  discount_total: string | number
  tax_total: string | number
@@ -106,6 +107,10 @@ function customerName(invoice: SaleInvoice) {
 
 function customerPhone(invoice: SaleInvoice) {
  return invoice.customer?.phone || invoice.customer_phone || 'No phone'
+}
+
+function customerEmail(invoice: SaleInvoice) {
+ return invoice.customer_email || invoice.customer?.email || 'No email'
 }
 
 function itemName(item: SaleItem) {
@@ -170,6 +175,9 @@ function itemName(item: SaleItem) {
 
  <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
  {{ customerPhone(invoice) }}
+ </p>
+ <p class="mt-1 break-all text-xs text-gray-500 dark:text-gray-400">
+ {{ customerEmail(invoice) }}
  </p>
  </div>
 
