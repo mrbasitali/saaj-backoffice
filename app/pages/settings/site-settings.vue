@@ -19,6 +19,10 @@ type Settings = {
   contact_address: string | null
   bank_details: string | null
   currency: string | null
+  show_sold_out_products: boolean
+  stacked_product_gallery_enabled: boolean
+  editorial_gallery_padding_enabled: boolean
+  direct_buy_now_enabled: boolean
   social_facebook_enabled: boolean
   social_facebook_url: string | null
   social_instagram_enabled: boolean
@@ -53,6 +57,10 @@ const form = reactive<Settings>({
   contact_address: null,
   bank_details: null,
   currency: 'PKR',
+  show_sold_out_products: true,
+  stacked_product_gallery_enabled: false,
+  editorial_gallery_padding_enabled: true,
+  direct_buy_now_enabled: false,
   social_facebook_enabled: false,
   social_facebook_url: null,
   social_instagram_enabled: false,
@@ -156,6 +164,11 @@ function buildFormData() {
 
     body.append(field, String(value))
   }
+
+  body.append('show_sold_out_products', form.show_sold_out_products ? '1' : '0')
+  body.append('stacked_product_gallery_enabled', form.stacked_product_gallery_enabled ? '1' : '0')
+  body.append('editorial_gallery_padding_enabled', form.editorial_gallery_padding_enabled ? '1' : '0')
+  body.append('direct_buy_now_enabled', form.direct_buy_now_enabled ? '1' : '0')
 
   const socialPlatforms = ['facebook', 'instagram', 'tiktok', 'youtube', 'whatsapp', 'twitter']
 
@@ -433,6 +446,126 @@ const socialConfig = [
               spacing-control
               placeholder="Bank name, account title, IBAN, payment instructions…"
             />
+          </div>
+        </div>
+      </AppCard>
+
+      <AppCard class="p-5 sm:p-6">
+        <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p class="text-sm font-semibold text-gray-950 dark:text-white">
+              Storefront catalogue
+            </p>
+            <p class="mt-1 max-w-2xl text-[13px] leading-5 text-gray-400 dark:text-gray-500">
+              Control whether products with no purchasable active variant remain visible in storefront product lists.
+            </p>
+          </div>
+
+          <div class="flex shrink-0 items-center gap-3">
+            <span
+              class="rounded-full px-2.5 py-1 text-[11px] font-medium"
+              :class="form.show_sold_out_products
+                ? 'bg-emerald-500/[0.08] text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400'
+                : 'bg-gray-950/[0.05] text-gray-500 dark:bg-white/[0.07] dark:text-gray-400'"
+            >
+              {{ form.show_sold_out_products ? 'Shown' : 'Hidden' }}
+            </span>
+            <AppToggle v-model="form.show_sold_out_products" />
+          </div>
+        </div>
+
+        <div class="mt-5 rounded-[12px] bg-gray-950/[0.025] px-4 py-3.5 dark:bg-white/[0.035]">
+          <p class="text-[13px] font-medium text-gray-800 dark:text-gray-200">
+            Show sold-out products
+          </p>
+          <p class="mt-1 text-[12px] leading-5 text-gray-400 dark:text-gray-500">
+            When enabled, sold-out products stay visible and their thumbnails display a Sold out badge. When disabled, they are hidden from catalogue, featured, related, search, and wishlist product lists. Direct product links remain available.
+          </p>
+        </div>
+      </AppCard>
+
+      <AppCard class="p-5 sm:p-6">
+        <div>
+          <p class="text-sm font-semibold text-gray-950 dark:text-white">
+            Product page experience
+          </p>
+          <p class="mt-1 max-w-2xl text-[13px] leading-5 text-gray-400 dark:text-gray-500">
+            Choose the storefront product-gallery experience and the primary purchase action without changing product data.
+          </p>
+        </div>
+
+        <div class="mt-5 divide-y divide-gray-950/[0.06] overflow-hidden rounded-[14px] bg-gray-950/[0.025] dark:divide-white/[0.07] dark:bg-white/[0.035]">
+          <div class="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between sm:gap-7">
+            <div class="min-w-0">
+              <div class="flex flex-wrap items-center gap-2.5">
+                <p class="text-[13px] font-semibold text-gray-900 dark:text-gray-100">
+                  Editorial stacked gallery
+                </p>
+                <span
+                  class="rounded-full px-2.5 py-1 text-[11px] font-medium"
+                  :class="form.stacked_product_gallery_enabled
+                    ? 'bg-violet-500/[0.09] text-violet-700 dark:bg-violet-500/10 dark:text-violet-300'
+                    : 'bg-gray-950/[0.05] text-gray-500 dark:bg-white/[0.07] dark:text-gray-400'"
+                >
+                  {{ form.stacked_product_gallery_enabled ? 'Editorial' : 'Classic' }}
+                </span>
+              </div>
+              <p class="mt-1.5 max-w-2xl text-[12px] leading-5 text-gray-400 dark:text-gray-500">
+                Desktop shows full product images stacked vertically with a wider sticky purchase rail beside them. Mobile keeps the normal filled swipe gallery first, then pins the image while product information scrolls over it. Turn this off to keep the current classic gallery.
+              </p>
+            </div>
+            <AppToggle v-model="form.stacked_product_gallery_enabled" class="shrink-0" />
+          </div>
+
+          <div
+            class="flex flex-col gap-4 p-4 transition-opacity sm:flex-row sm:items-center sm:justify-between sm:gap-7"
+            :class="form.stacked_product_gallery_enabled ? 'opacity-100' : 'opacity-55'"
+          >
+            <div class="min-w-0">
+              <div class="flex flex-wrap items-center gap-2.5">
+                <p class="text-[13px] font-semibold text-gray-900 dark:text-gray-100">
+                  Editorial gallery padding
+                </p>
+                <span
+                  class="rounded-full px-2.5 py-1 text-[11px] font-medium"
+                  :class="form.editorial_gallery_padding_enabled
+                    ? 'bg-sky-500/[0.09] text-sky-700 dark:bg-sky-500/10 dark:text-sky-300'
+                    : 'bg-amber-500/[0.09] text-amber-700 dark:bg-amber-500/10 dark:text-amber-300'"
+                >
+                  {{ form.editorial_gallery_padding_enabled ? 'Padded' : 'Full bleed' }}
+                </span>
+              </div>
+              <p class="mt-1.5 max-w-2xl text-[12px] leading-5 text-gray-400 dark:text-gray-500">
+                Desktop editorial gallery only. Padded keeps the current breathing room and contains each image. Full bleed removes the gallery padding and lets each source image span the full media width at its natural aspect ratio, so the whole photograph remains visible without artificial zoom or cropping.
+              </p>
+            </div>
+            <AppToggle
+              v-model="form.editorial_gallery_padding_enabled"
+              class="shrink-0"
+              :disabled="!form.stacked_product_gallery_enabled"
+            />
+          </div>
+
+          <div class="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between sm:gap-7">
+            <div class="min-w-0">
+              <div class="flex flex-wrap items-center gap-2.5">
+                <p class="text-[13px] font-semibold text-gray-900 dark:text-gray-100">
+                  Show Buy now button
+                </p>
+                <span
+                  class="rounded-full px-2.5 py-1 text-[11px] font-medium"
+                  :class="form.direct_buy_now_enabled
+                    ? 'bg-emerald-500/[0.09] text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300'
+                    : 'bg-gray-950/[0.05] text-gray-500 dark:bg-white/[0.07] dark:text-gray-400'"
+                >
+                  {{ form.direct_buy_now_enabled ? 'Two actions' : 'Add to bag only' }}
+                </span>
+              </div>
+              <p class="mt-1.5 max-w-2xl text-[12px] leading-5 text-gray-400 dark:text-gray-500">
+                When enabled, customers see both Add to bag and Buy now. Add to bag keeps the confirmation drawer, while Buy now adds the selected variant and goes straight to checkout. When disabled, only Add to bag is shown.
+              </p>
+            </div>
+            <AppToggle v-model="form.direct_buy_now_enabled" class="shrink-0" />
           </div>
         </div>
       </AppCard>
