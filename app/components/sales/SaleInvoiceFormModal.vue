@@ -96,6 +96,7 @@ type SaleInvoice = {
  customer_phone: string | null
  subtotal: string | number
  discount_total: string | number
+ invoice_discount_amount: string | number
  tax_total: string | number
  shipping_cost: string | number
  grand_total: string | number
@@ -139,6 +140,7 @@ const form = reactive({
  sale_date: todayDate(),
  customer_name: '',
  customer_phone: '',
+ invoice_discount_amount: 0,
  shipping_cost: 0,
  paid_amount: 0,
  notes: '',
@@ -295,9 +297,13 @@ const subtotal = computed(() => {
  return form.items.reduce((sum, item) => sum + (Number(item.quantity || 0) * Number(item.unit_price || 0)), 0)
 })
 
-const discountTotal = computed(() => {
+const itemDiscountTotal = computed(() => {
  return form.items.reduce((sum, item) => sum + Number(item.discount_amount || 0), 0)
 })
+
+const overallDiscountAmount = computed(() => Math.max(0, Number(form.invoice_discount_amount || 0)))
+
+const discountTotal = computed(() => itemDiscountTotal.value + overallDiscountAmount.value)
 
 const taxTotal = computed(() => {
  return form.items.reduce((sum, item) => sum + Number(item.tax_amount || 0), 0)
@@ -312,12 +318,29 @@ const balanceAmount = computed(() => {
 })
 
 const canSubmit = computed(() => {
+ const linesAreValid = form.items.every((item) => {
+ const gross = Number(item.quantity || 0) * Number(item.unit_price || 0)
+ return item.product_variant_id
+ && Number(item.quantity) > 0
+ && Number(item.unit_price) >= 0
+ && Number(item.discount_amount || 0) >= 0
+ && Number(item.discount_amount || 0) <= gross
+ && Number(item.tax_amount || 0) >= 0
+ })
+ const discountableAmount = Math.max(0, subtotal.value - itemDiscountTotal.value)
+ const rawOverallDiscount = Number(form.invoice_discount_amount || 0)
+
  return Boolean(
  form.inventory_location_id
  && form.channel
  && form.sale_date
  && form.items.length
- && form.items.every((item) => item.product_variant_id && Number(item.quantity) > 0 && Number(item.unit_price) >= 0),
+ && linesAreValid
+ && rawOverallDiscount >= 0
+ && overallDiscountAmount.value <= discountableAmount
+ && Number(form.shipping_cost || 0) >= 0
+ && Number(form.paid_amount || 0) >= 0
+ && Number(form.paid_amount || 0) <= grandTotal.value,
  )
 })
 
@@ -375,6 +398,7 @@ function resetForm() {
  form.sale_date = props.invoice?.sale_date ?? todayDate()
  form.customer_name = props.invoice?.customer_name ?? ''
  form.customer_phone = props.invoice?.customer_phone ?? ''
+ form.invoice_discount_amount = Number(props.invoice?.invoice_discount_amount ?? 0)
  form.shipping_cost = Number(props.invoice?.shipping_cost ?? 0)
  form.paid_amount = Number(props.invoice?.paid_amount ?? 0)
  form.notes = props.invoice?.notes ?? ''
@@ -727,6 +751,7 @@ function payload() {
  sale_date: form.sale_date,
  customer_name: form.customer_name || null,
  customer_phone: form.customer_phone || null,
+ invoice_discount_amount: Number(form.invoice_discount_amount || 0),
  shipping_cost: Number(form.shipping_cost || 0),
  paid_amount: Number(form.paid_amount || 0),
  notes: form.notes || null,
@@ -1120,9 +1145,16 @@ async function submit() {
  </div>
 
  <div class="flex items-center justify-between text-sm">
- <span class="text-gray-500 dark:text-gray-400">Discount</span>
- <span class="font-semibold text-gray-950 dark:text-white">-{{ money(discountTotal) }}</span>
+ <span class="text-gray-500 dark:text-gray-400">Item discounts</span>
+ <span class="font-semibold text-gray-950 dark:text-white">-{{ money(itemDiscountTotal) }}</span>
  </div>
+
+ <AppInput
+ v-model="form.invoice_discount_amount"
+ label="Overall discount"
+ type="number"
+ :error="fieldErrors.invoice_discount_amount"
+ />
 
  <div class="flex items-center justify-between text-sm">
  <span class="text-gray-500 dark:text-gray-400">Tax</span>

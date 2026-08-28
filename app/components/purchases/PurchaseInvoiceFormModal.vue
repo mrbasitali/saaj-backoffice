@@ -64,6 +64,7 @@ type PurchaseInvoice = {
  payment_status: string
  subtotal: string | number
  discount_total: string | number
+ invoice_discount_amount: string | number
  tax_total: string | number
  shipping_cost: string | number
  grand_total: string | number
@@ -105,18 +106,31 @@ const form = reactive({
  vendor_invoice_number: '',
  purchase_date: todayDate(),
  due_date: '',
+ invoice_discount_amount: 0,
  shipping_cost: 0,
  paid_amount: 0,
  notes: '',
  items: [] as PurchaseItem[],
 })
 
-const title = computed(() => props.mode === 'create' ? 'New purchase invoice' : 'Edit purchase invoice')
+const isReceivedEdit = computed(() => props.mode === 'edit' && props.invoice?.status === 'received')
+
+const title = computed(() => {
+ if (props.mode === 'create') return 'New purchase invoice'
+ if (isReceivedEdit.value) return 'Edit received purchase'
+ return 'Edit purchase invoice'
+})
 
 const description = computed(() => {
- return props.mode === 'create'
- ? 'Create a draft purchase invoice. Stock is added only when you receive the invoice.'
- : 'Edit this draft purchase invoice before receiving stock.'
+ if (props.mode === 'create') {
+ return 'Create a draft purchase invoice. Stock is added only when you receive the invoice.'
+ }
+
+ if (isReceivedEdit.value) {
+ return 'Adjust discounts, tax, shipping, references and notes safely. Received products, quantities, unit costs, vendor, location and paid amount stay locked.'
+ }
+
+ return 'Edit this draft purchase invoice before receiving stock.'
 })
 
 const extraVendors = ref<Record<number, Vendor>>({})
@@ -198,9 +212,13 @@ const subtotal = computed(() => {
  return form.items.reduce((sum, item) => sum + (Number(item.quantity || 0) * Number(item.unit_cost || 0)), 0)
 })
 
-const discountTotal = computed(() => {
+const itemDiscountTotal = computed(() => {
  return form.items.reduce((sum, item) => sum + Number(item.discount_amount || 0), 0)
 })
+
+const overallDiscountAmount = computed(() => Math.max(0, Number(form.invoice_discount_amount || 0)))
+
+const discountTotal = computed(() => itemDiscountTotal.value + overallDiscountAmount.value)
 
 const taxTotal = computed(() => {
  return form.items.reduce((sum, item) => sum + Number(item.tax_amount || 0), 0)
@@ -215,12 +233,29 @@ const balanceAmount = computed(() => {
 })
 
 const canSubmit = computed(() => {
+ const linesAreValid = form.items.every((item) => {
+ const gross = Number(item.quantity || 0) * Number(item.unit_cost || 0)
+ return item.product_variant_id
+ && Number(item.quantity) > 0
+ && Number(item.unit_cost) >= 0
+ && Number(item.discount_amount || 0) >= 0
+ && Number(item.discount_amount || 0) <= gross
+ && Number(item.tax_amount || 0) >= 0
+ })
+ const discountableAmount = Math.max(0, subtotal.value - itemDiscountTotal.value)
+ const rawOverallDiscount = Number(form.invoice_discount_amount || 0)
+
  return Boolean(
  form.vendor_id
  && form.inventory_location_id
  && form.purchase_date
  && form.items.length
- && form.items.every((item) => item.product_variant_id && Number(item.quantity) > 0 && Number(item.unit_cost) >= 0),
+ && linesAreValid
+ && rawOverallDiscount >= 0
+ && overallDiscountAmount.value <= discountableAmount
+ && Number(form.shipping_cost || 0) >= 0
+ && Number(form.paid_amount || 0) >= 0
+ && Number(form.paid_amount || 0) <= grandTotal.value,
  )
 })
 
@@ -259,6 +294,7 @@ function resetForm() {
  form.vendor_invoice_number = props.invoice?.vendor_invoice_number ?? ''
  form.purchase_date = props.invoice?.purchase_date ?? todayDate()
  form.due_date = props.invoice?.due_date ?? ''
+ form.invoice_discount_amount = Number(props.invoice?.invoice_discount_amount ?? 0)
  form.shipping_cost = Number(props.invoice?.shipping_cost ?? 0)
  form.paid_amount = Number(props.invoice?.paid_amount ?? 0)
  form.notes = props.invoice?.notes ?? ''
@@ -474,15 +510,12 @@ function friendlyError(error: any) {
 }
 
 function payload() {
- return {
- vendor_id: Number(form.vendor_id),
- inventory_location_id: Number(form.inventory_location_id),
+ const common = {
  invoice_number: form.invoice_number || undefined,
  vendor_invoice_number: form.vendor_invoice_number || null,
- purchase_date: form.purchase_date,
  due_date: form.due_date || null,
+ invoice_discount_amount: Number(form.invoice_discount_amount || 0),
  shipping_cost: Number(form.shipping_cost || 0),
- paid_amount: Number(form.paid_amount || 0),
  notes: form.notes || null,
  items: form.items.map((item) => ({
  product_variant_id: Number(item.product_variant_id),
@@ -492,6 +525,18 @@ function payload() {
  tax_amount: Number(item.tax_amount || 0),
  notes: item.notes || null,
  })),
+ }
+
+ if (isReceivedEdit.value) {
+ return common
+ }
+
+ return {
+ ...common,
+ vendor_id: Number(form.vendor_id),
+ inventory_location_id: Number(form.inventory_location_id),
+ purchase_date: form.purchase_date,
+ paid_amount: Number(form.paid_amount || 0),
  }
 }
 
@@ -556,10 +601,12 @@ async function submit() {
  v-model="form.vendor_id"
  label="Vendor"
  :options="vendorOptions"
+ :disabled="isReceivedEdit"
  />
  </div>
 
  <AppButton
+ v-if="!isReceivedEdit"
  type="button"
  variant="secondary"
  @click="vendorQuickAddOpen = true"
@@ -572,6 +619,7 @@ async function submit() {
  v-model="form.inventory_location_id"
  label="Receive into location"
  :options="locationOptions"
+ :disabled="isReceivedEdit"
  />
 
  <AppInput
@@ -593,6 +641,7 @@ async function submit() {
  label="Purchase date"
  type="date"
  :error="fieldErrors.purchase_date"
+ :disabled="isReceivedEdit"
  required
  />
 
@@ -621,12 +670,22 @@ async function submit() {
  Purchase items
  </h3>
 
- <p class="mt-2 rounded-[12px] bg-blue-500/[0.07] p-3 text-sm leading-6 text-blue-800 dark:bg-blue-500/10 dark:text-blue-200">
+ <p
+ v-if="isReceivedEdit"
+ class="mt-2 rounded-[12px] bg-amber-500/[0.07] p-3 text-sm leading-6 text-amber-800 dark:bg-amber-500/10 dark:text-amber-200"
+ >
+ Stock history is protected. You can change item discounts, tax and notes, but product, quantity and unit cost stay locked after receiving.
+ </p>
+ <p
+ v-else
+ class="mt-2 rounded-[12px] bg-blue-500/[0.07] p-3 text-sm leading-6 text-blue-800 dark:bg-blue-500/10 dark:text-blue-200"
+ >
  Scan or type a barcode/SKU below — fastest way to add a line.
  </p>
  </div>
 
  <AppButton
+ v-if="!isReceivedEdit"
  type="button"
  variant="secondary"
  size="sm"
@@ -636,7 +695,7 @@ async function submit() {
  </AppButton>
  </div>
 
- <div class="mt-4 flex items-end gap-2">
+ <div v-if="!isReceivedEdit" class="mt-4 flex items-end gap-2">
  <div class="flex-1">
  <AppInput
  ref="scanInputRef"
@@ -659,7 +718,7 @@ async function submit() {
  </div>
 
  <div
- v-if="nameSearchOpen"
+ v-if="nameSearchOpen && !isReceivedEdit"
  class="mt-4 rounded-[14px] bg-gray-950/[0.035] p-4 dark:bg-white/[0.03]"
  >
  <div class="flex items-center justify-between gap-3">
@@ -742,12 +801,14 @@ async function submit() {
  v-model="item.quantity"
  label="Qty"
  type="number"
+ :disabled="isReceivedEdit"
  />
 
  <AppInput
  v-model="item.unit_cost"
  label="Unit cost"
  type="number"
+ :disabled="isReceivedEdit"
  />
 
  <AppInput
@@ -780,6 +841,7 @@ async function submit() {
  />
 
  <AppButton
+ v-if="!isReceivedEdit"
  type="button"
  variant="ghost"
  size="sm"
@@ -806,9 +868,16 @@ async function submit() {
  </div>
 
  <div class="flex items-center justify-between text-sm">
- <span class="text-gray-500 dark:text-gray-400">Discount</span>
- <span class="font-semibold text-gray-950 dark:text-white">-{{ money(discountTotal) }}</span>
+ <span class="text-gray-500 dark:text-gray-400">Item discounts</span>
+ <span class="font-semibold text-gray-950 dark:text-white">-{{ money(itemDiscountTotal) }}</span>
  </div>
+
+ <AppInput
+ v-model="form.invoice_discount_amount"
+ label="Overall discount"
+ type="number"
+ :error="fieldErrors.invoice_discount_amount"
+ />
 
  <div class="flex items-center justify-between text-sm">
  <span class="text-gray-500 dark:text-gray-400">Tax</span>
@@ -834,6 +903,7 @@ async function submit() {
  label="Paid amount"
  type="number"
  :error="fieldErrors.paid_amount"
+ :disabled="isReceivedEdit"
  />
 
  <div class="rounded-[12px] bg-gray-950/[0.035] p-4 dark:bg-white/[0.055]">
@@ -847,14 +917,14 @@ async function submit() {
  </div>
 
  <p class="mt-2 text-xs leading-5 text-gray-500 dark:text-gray-400">
- Vendor payable balance is updated only when the invoice is received.
+ {{ isReceivedEdit ? 'Saving recalculates this invoice balance and adjusts the vendor payable by the difference.' : 'Vendor payable balance is updated only when the invoice is received.' }}
  </p>
  </div>
  </div>
  </section>
 
  <section class="rounded-[12px] bg-amber-500/[0.07] p-4 text-sm leading-6 text-amber-800 dark:bg-amber-500/10 dark:text-amber-200">
- Save creates a draft only. Use “Receive stock” from the list after checking quantities and costs.
+ {{ isReceivedEdit ? 'Received stock fields are locked intentionally so later sales and inventory history cannot be corrupted.' : 'Save creates a draft only. Use “Receive stock” from the list after checking quantities and costs.' }}
  </section>
  </aside>
  </div>
@@ -875,7 +945,7 @@ async function submit() {
  :loading="saving"
  :disabled="!canSubmit"
  >
- {{ saving ? 'Saving...' : 'Save draft invoice' }}
+ {{ saving ? 'Saving...' : (isReceivedEdit ? 'Save financial changes' : 'Save draft invoice') }}
  </AppButton>
  </div>
  </form>

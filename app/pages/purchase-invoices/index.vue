@@ -71,6 +71,7 @@ type PurchaseInvoice = {
  payment_status: string
  subtotal: string | number
  discount_total: string | number
+ invoice_discount_amount: string | number
  tax_total: string | number
  shipping_cost: string | number
  grand_total: string | number
@@ -437,7 +438,7 @@ function label(value: string) {
 }
 
 function canEditInvoice(invoice: PurchaseInvoice) {
- return invoice.status === 'draft'
+ return invoice.status === 'draft' || invoice.status === 'received'
 }
 
 function showNotice(message: string) {
@@ -1120,9 +1121,19 @@ function nextPage() {
  </div>
 
  <div
- v-else
+ v-else-if="invoice.status === 'received'"
  class="flex items-center justify-end gap-2"
  >
+ <AppButton
+ type="button"
+ variant="secondary"
+ size="sm"
+ :loading="editingInvoiceId === invoice.id"
+ @click="openEdit(invoice)"
+ >
+ Edit
+ </AppButton>
+
  <AppButton
  type="button"
  variant="secondary"
@@ -1140,6 +1151,18 @@ function nextPage() {
  @click="printPurchasePdf(invoice)"
  >
  Print
+ </AppButton>
+ </div>
+
+ <div v-else class="flex items-center justify-end gap-2">
+ <AppButton
+ type="button"
+ variant="secondary"
+ size="sm"
+ :loading="viewingInvoiceId === invoice.id"
+ @click="openView(invoice)"
+ >
+ View
  </AppButton>
  </div>
  </td>
@@ -1250,9 +1273,19 @@ function nextPage() {
  </div>
 
  <div
- v-else
- class="mt-4 grid grid-cols-2 gap-2"
+ v-else-if="invoice.status === 'received'"
+ class="mt-4 grid grid-cols-3 gap-2"
  >
+ <AppButton
+ type="button"
+ variant="secondary"
+ size="sm"
+ :loading="editingInvoiceId === invoice.id"
+ @click="openEdit(invoice)"
+ >
+ Edit
+ </AppButton>
+
  <AppButton
  type="button"
  variant="secondary"
@@ -1270,6 +1303,18 @@ function nextPage() {
  @click="printPurchasePdf(invoice)"
  >
  Print
+ </AppButton>
+ </div>
+
+ <div v-else class="mt-4 grid grid-cols-1 gap-2">
+ <AppButton
+ type="button"
+ variant="secondary"
+ size="sm"
+ :loading="viewingInvoiceId === invoice.id"
+ @click="openView(invoice)"
+ >
+ View
  </AppButton>
  </div>
  </AppCard>

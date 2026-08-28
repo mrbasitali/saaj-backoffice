@@ -106,6 +106,7 @@ type SaleInvoice = {
  }>
  subtotal: string | number
  discount_total: string | number
+ invoice_discount_amount: string | number
  tax_total: string | number
  shipping_cost: string | number
  grand_total: string | number

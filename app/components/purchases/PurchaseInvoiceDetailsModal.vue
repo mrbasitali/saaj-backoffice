@@ -53,6 +53,7 @@ type PurchaseInvoice = {
  payment_status: string
  subtotal: string | number
  discount_total: string | number
+ invoice_discount_amount: string | number
  tax_total: string | number
  shipping_cost: string | number
  grand_total: string | number
@@ -96,11 +97,19 @@ function label(value: string | null | undefined) {
 }
 
 function itemName(item: PurchaseItem) {
- const variant = item.variant
- const product = variant?.product?.name || 'Product'
- const option = variant?.option_summary || variant?.name || 'Default'
+ return item.variant?.product?.name || item.variant?.name || 'Product'
+}
 
- return [product, option].filter(Boolean).join(' · ')
+function itemMeta(item: PurchaseItem) {
+ const variant = item.variant
+ return [
+ variant?.option_summary || (variant?.name && variant?.name !== itemName(item) ? variant.name : null),
+ variant?.sku ? `SKU ${variant.sku}` : null,
+ ].filter(Boolean).join(' · ')
+}
+
+function itemDiscountTotal(invoice: PurchaseInvoice) {
+ return Math.max(0, Number(invoice.discount_total || 0) - Number(invoice.invoice_discount_amount || 0))
 }
 </script>
 
@@ -194,23 +203,20 @@ function itemName(item: PurchaseItem) {
  <h3 class="text-[14px] font-semibold text-gray-900 dark:text-gray-100">Items</h3>
 
  <div class="mt-4 overflow-hidden rounded-[12px] bg-white dark:bg-[#111214]">
- <div class="hidden grid-cols-[minmax(0,2fr)_1fr_.55fr_.8fr_.8fr_.9fr] gap-3 bg-gray-950/[0.018] px-3 py-2.5 text-[11px] font-semibold uppercase tracking-[0.07em] text-gray-400 dark:bg-white/[0.025] dark:text-gray-600 md:grid">
- <span>Product</span><span>SKU</span><span class="text-right">Qty</span><span class="text-right">Unit cost</span><span class="text-right">Discount</span><span class="text-right">Total</span>
+ <div class="hidden grid-cols-[minmax(0,2.6fr)_.55fr_.8fr_.8fr_.9fr] gap-3 bg-gray-950/[0.018] px-3 py-2.5 text-[11px] font-semibold uppercase tracking-[0.07em] text-gray-400 dark:bg-white/[0.025] dark:text-gray-600 md:grid">
+ <span>Product</span><span class="text-right">Qty</span><span class="text-right">Unit cost</span><span class="text-right">Discount</span><span class="text-right">Total</span>
  </div>
 
  <div class="divide-y divide-gray-100 dark:divide-white/[0.055]">
  <div
  v-for="item in invoice.items || []"
  :key="item.id || `${item.product_variant_id}-${item.quantity}`"
- class="grid gap-3 px-3 py-3 md:grid-cols-[minmax(0,2fr)_1fr_.55fr_.8fr_.8fr_.9fr] md:items-center"
+ class="grid gap-3 px-3 py-3 md:grid-cols-[minmax(0,2.6fr)_.55fr_.8fr_.8fr_.9fr] md:items-center"
  >
  <div class="min-w-0">
  <p class="truncate text-[13px] font-semibold text-gray-900 dark:text-gray-100">{{ itemName(item) }}</p>
+ <p v-if="itemMeta(item)" class="mt-1 break-words text-[11px] text-gray-500 dark:text-gray-500">{{ itemMeta(item) }}</p>
  <p v-if="item.notes" class="mt-1 line-clamp-2 text-[11px] text-gray-400 dark:text-gray-600">{{ item.notes }}</p>
- </div>
- <div class="flex items-center justify-between gap-3 md:block">
- <span class="text-[11px] text-gray-400 md:hidden">SKU</span>
- <span class="truncate font-mono text-[11px] text-gray-500 dark:text-gray-500">{{ item.variant?.sku || '-' }}</span>
  </div>
  <div class="flex items-center justify-between gap-3 md:block md:text-right">
  <span class="text-[11px] text-gray-400 md:hidden">Qty</span>
@@ -259,9 +265,14 @@ function itemName(item: PurchaseItem) {
  <span class="font-semibold text-gray-950 dark:text-white">{{ money(invoice.subtotal) }}</span>
  </div>
 
- <div class="flex justify-between">
- <span class="text-gray-500 dark:text-gray-400">Discount</span>
- <span class="font-semibold text-gray-950 dark:text-white">-{{ money(invoice.discount_total) }}</span>
+ <div v-if="itemDiscountTotal(invoice) > 0" class="flex justify-between">
+ <span class="text-gray-500 dark:text-gray-400">Item discounts</span>
+ <span class="font-semibold text-gray-950 dark:text-white">-{{ money(itemDiscountTotal(invoice)) }}</span>
+ </div>
+
+ <div v-if="Number(invoice.invoice_discount_amount || 0) > 0" class="flex justify-between">
+ <span class="text-gray-500 dark:text-gray-400">Overall discount</span>
+ <span class="font-semibold text-gray-950 dark:text-white">-{{ money(invoice.invoice_discount_amount) }}</span>
  </div>
 
  <div class="flex justify-between">
