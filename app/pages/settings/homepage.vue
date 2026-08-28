@@ -146,6 +146,23 @@ function appendText(body: FormData, key: string, value: string | number | boolea
   body.append(key, String(value ?? ''))
 }
 
+function richTextToPlain(value?: string | null) {
+  if (!value) return ''
+
+  return value
+    .replace(/<br\s*\/?\s*>/gi, ' ')
+    .replace(/<\/p>/gi, ' ')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#039;|&apos;/gi, "'")
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
 async function saveSettings() {
   settingsSaving.value = true
   settingsError.value = ''
@@ -682,12 +699,12 @@ function shortMediaLabel(slide: HeroSlide) {
                   v-for="(panel, panelIndex) in slide.panels"
                   :key="panelIndex"
                   :src="panel.image_url || ''"
-                  :alt="panel.alt_text || panel.title || `Panel ${panelIndex + 1}`"
+                  :alt="panel.alt_text || richTextToPlain(panel.title) || `Panel ${panelIndex + 1}`"
                   class="h-full min-w-0 object-cover"
                 >
               </div>
               <video v-else-if="slide.media_type === 'video' && slide.desktop_media_url" :src="slide.desktop_media_url" :poster="slide.poster_url || undefined" muted playsinline preload="metadata" class="h-full w-full object-cover" />
-              <img v-else-if="slide.desktop_media_url" :src="slide.desktop_media_url" :alt="slide.alt_text || slide.title || 'Homepage hero slide'" class="h-full w-full object-cover">
+              <img v-else-if="slide.desktop_media_url" :src="slide.desktop_media_url" :alt="slide.alt_text || richTextToPlain(slide.title) || 'Homepage hero slide'" class="h-full w-full object-cover">
               <span class="absolute left-2 top-2 rounded-full bg-black/55 px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.1em] text-white backdrop-blur">
                 {{ shortMediaLabel(slide) }}
               </span>
@@ -696,14 +713,14 @@ function shortMediaLabel(slide: HeroSlide) {
             <div class="min-w-0">
               <div class="flex flex-wrap items-center gap-2">
                 <p class="truncate text-[14px] font-semibold text-gray-950 dark:text-white">
-                  {{ slide.layout_type === 'panels' ? (slide.panels?.map(panel => panel.title).filter(Boolean).slice(0, 2).join(' · ') || 'Multi-panel campaign') : (slide.title || 'Untitled hero slide') }}
+                  {{ slide.layout_type === 'panels' ? (slide.panels?.map(panel => richTextToPlain(panel.title)).filter(Boolean).slice(0, 2).join(' · ') || 'Multi-panel campaign') : (richTextToPlain(slide.title) || 'Untitled hero slide') }}
                 </p>
                 <span class="rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.08em]" :class="slide.is_active ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400' : 'bg-gray-950/[0.05] text-gray-400 dark:bg-white/[0.06] dark:text-gray-500'">
                   {{ slide.is_active ? 'Active' : 'Hidden' }}
                 </span>
               </div>
               <p class="mt-2 line-clamp-2 max-w-2xl text-[12px] leading-5 text-gray-400 dark:text-gray-500">
-                {{ slide.layout_type === 'panels' ? 'Independent image panels reveal their copy and action on hover; content stays visible on touch devices.' : (slide.description || 'No supporting copy.') }}
+                {{ slide.layout_type === 'panels' ? 'Independent image panels reveal their copy and action on hover; content stays visible on touch devices.' : (richTextToPlain(slide.description) || 'No supporting copy.') }}
               </p>
               <div class="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[10px] font-medium uppercase tracking-[0.08em] text-gray-400 dark:text-gray-600">
                 <span>{{ slide.layout_type === 'panels' ? 'multi-panel' : slide.text_position.replace('-', ' ') }}</span>
@@ -846,8 +863,25 @@ function shortMediaLabel(slide: HeroSlide) {
               <AppInput v-model="slideForm.eyebrow" label="Eyebrow" placeholder="The new edit" />
               <AppInput v-model="slideForm.alt_text" label="Media alt text" placeholder="Model wearing…" />
             </div>
-            <AppInput v-model="slideForm.title" label="Headline" placeholder="Quiet detail. Strong presence." />
-            <AppTextarea v-model="slideForm.description" label="Supporting text" :rows="3" placeholder="Short campaign copy…" />
+            <div class="space-y-2">
+              <AppRichTextEditor
+                v-model="slideForm.title"
+                label="Headline"
+                placeholder="Quiet detail. Strong presence."
+                mode="simple"
+                compact
+                weight-control
+              />
+              <p class="text-[11px] leading-5 text-gray-400 dark:text-gray-500">Use Enter for a new line. Bold, light, italic and underline are supported.</p>
+            </div>
+            <AppRichTextEditor
+              v-model="slideForm.description"
+              label="Supporting text"
+              placeholder="Short campaign copy…"
+              mode="simple"
+              compact
+              weight-control
+            />
             <div class="grid gap-4 sm:grid-cols-2">
               <AppInput v-model="slideForm.primary_cta_label" label="Primary button" placeholder="Shop the edit" />
               <AppInput v-model="slideForm.primary_cta_url" label="Primary destination" placeholder="/shop" />
@@ -911,8 +945,22 @@ function shortMediaLabel(slide: HeroSlide) {
                       { label: 'Center right', value: 'center-right' },
                     ]"
                   />
-                  <AppInput v-model="panel.title" label="Title" placeholder="The summer edit" />
-                  <AppTextarea v-model="panel.description" label="Text" :rows="2" placeholder="Short line shown with this image…" />
+                  <AppRichTextEditor
+                    v-model="panel.title"
+                    label="Title"
+                    placeholder="The summer edit"
+                    mode="simple"
+                    compact
+                    weight-control
+                  />
+                  <AppRichTextEditor
+                    v-model="panel.description"
+                    label="Text"
+                    placeholder="Short line shown with this image…"
+                    mode="simple"
+                    compact
+                    weight-control
+                  />
                   <div class="grid gap-3 sm:grid-cols-2">
                     <AppInput v-model="panel.cta_label" label="Button" placeholder="Explore" />
                     <AppInput v-model="panel.cta_url" label="Destination" placeholder="/shop/women" />
@@ -940,7 +988,7 @@ function shortMediaLabel(slide: HeroSlide) {
     <AppConfirmModal
       :open="deleteOpen"
       title="Delete hero slide?"
-      :message="`This will permanently remove ${slideToDelete?.title || (slideToDelete?.layout_type === 'panels' ? 'this multi-panel story' : 'this slide')} and its uploaded media.`"
+      :message="`This will permanently remove ${richTextToPlain(slideToDelete?.title) || (slideToDelete?.layout_type === 'panels' ? 'this multi-panel story' : 'this slide')} and its uploaded media.`"
       confirm-label="Delete slide"
       :loading="deleting"
       :error="deleteError"

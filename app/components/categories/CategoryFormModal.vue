@@ -13,6 +13,7 @@ type Category = {
  meta_description: string | null
  is_active: boolean
  show_in_menu: boolean
+ show_on_home: boolean
  sort_order: number
  depth: number
  children?: Category[] | null
@@ -90,6 +91,7 @@ const form = reactive({
  meta_description: '',
  is_active: true,
  show_in_menu: true,
+ show_on_home: false,
  sort_order: 0,
 })
 
@@ -262,6 +264,10 @@ function resetForm() {
  form.show_in_menu =
  props.category?.show_in_menu ??
  true
+
+ form.show_on_home =
+ props.category?.show_on_home ??
+ false
 
  form.sort_order =
  props.category?.sort_order ??
@@ -451,6 +457,13 @@ function buildFormData() {
  data.append(
  'show_in_menu',
  form.show_in_menu
+ ? '1'
+ : '0',
+ )
+
+ data.append(
+ 'show_on_home',
+ form.show_on_home
  ? '1'
  : '0',
  )
@@ -786,7 +799,7 @@ onBeforeUnmount(() => {
  grid
  gap-3
 
- sm:grid-cols-2
+ sm:grid-cols-3
  "
  >
  <div
@@ -826,6 +839,26 @@ onBeforeUnmount(() => {
  "
  label="Show in menu"
  description="Include this category in navigation menus."
+ />
+ </div>
+
+ <div
+ class="
+ rounded-[12px]
+
+ bg-gray-950/[0.035]
+
+ p-3.5
+
+ dark:bg-white/[0.055]
+ "
+ >
+ <AppToggle
+ v-model="
+ form.show_on_home
+ "
+ label="Show on home page"
+ description="Include this category in the homepage category section, regardless of parent or child level."
  />
  </div>
  </div>

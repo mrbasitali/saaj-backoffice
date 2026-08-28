@@ -17,6 +17,7 @@ type Category = {
   meta_description: string | null
   is_active: boolean
   show_in_menu: boolean
+  show_on_home: boolean
   sort_order: number
   depth: number
   children?: Category[] | null
@@ -155,6 +156,12 @@ function directChildCount(category: Category) {
           </p>
           <p class="text-[11px] text-gray-400 dark:text-gray-600">menu</p>
         </div>
+        <div class="min-w-[78px] text-right">
+          <p class="text-[12px] font-medium text-gray-600 dark:text-gray-400">
+            {{ category.show_on_home ? 'Visible' : 'Hidden' }}
+          </p>
+          <p class="text-[11px] text-gray-400 dark:text-gray-600">home</p>
+        </div>
       </div>
 
       <div class="flex shrink-0 items-center gap-1">
@@ -194,6 +201,7 @@ function directChildCount(category: Category) {
       <span>{{ childCount(category) }} nested</span>
       <span>Sort {{ category.sort_order }}</span>
       <span>{{ category.show_in_menu ? 'Menu visible' : 'Menu hidden' }}</span>
+      <span>{{ category.show_on_home ? 'Home visible' : 'Home hidden' }}</span>
     </div>
 
     <Transition

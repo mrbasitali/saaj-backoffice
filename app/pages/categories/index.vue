@@ -21,6 +21,7 @@ type Category = {
  meta_description: string | null
  is_active: boolean
  show_in_menu: boolean
+ show_on_home: boolean
  sort_order: number
  depth: number
  children?: Category[] | null
@@ -38,6 +39,7 @@ const search = ref('')
 const debouncedSearch = ref('')
 const activeFilter = ref('all')
 const menuFilter = ref('all')
+const homeFilter = ref('all')
 const levelFilter = ref('all')
 const sortBy = ref('sort_order')
 
@@ -69,6 +71,12 @@ const menuOptions = [
  { label: 'All menu visibility', value: 'all' },
  { label: 'Visible in menu', value: 'yes' },
  { label: 'Hidden from menu', value: 'no' },
+]
+
+const homeOptions = [
+ { label: 'All home visibility', value: 'all' },
+ { label: 'Visible on home', value: 'yes' },
+ { label: 'Hidden from home', value: 'no' },
 ]
 
 const levelOptions = [
@@ -120,6 +128,7 @@ const hasActiveFilters = computed(() => {
  search.value ||
  activeFilter.value !== 'all' ||
  menuFilter.value !== 'all' ||
+ homeFilter.value !== 'all' ||
  levelFilter.value !== 'all' ||
  sortBy.value !== 'sort_order',
  )
@@ -129,6 +138,7 @@ const visibleFilterCount = computed(() => {
  return [
  activeFilter.value !== 'all',
  menuFilter.value !== 'all',
+ homeFilter.value !== 'all',
  levelFilter.value !== 'all',
  sortBy.value !== 'sort_order',
  ].filter(Boolean).length
@@ -254,6 +264,14 @@ function matchesFilters(category: Category) {
  const expected = menuFilter.value === 'yes'
 
  if (category.show_in_menu !== expected) {
+ return false
+ }
+ }
+
+ if (homeFilter.value !== 'all') {
+ const expected = homeFilter.value === 'yes'
+
+ if (category.show_on_home !== expected) {
  return false
  }
  }
@@ -414,6 +432,7 @@ function clearFilters() {
  debouncedSearch.value = ''
  activeFilter.value = 'all'
  menuFilter.value = 'all'
+ homeFilter.value = 'all'
  levelFilter.value = 'all'
  sortBy.value = 'sort_order'
 }
@@ -893,7 +912,7 @@ function clearFilters() {
 
  sm:grid-cols-2
 
- xl:grid-cols-4
+ xl:grid-cols-5
  "
  >
  <AppSelect
@@ -906,6 +925,12 @@ function clearFilters() {
  v-model="menuFilter"
  label="Menu"
  :options="menuOptions"
+ />
+
+ <AppSelect
+ v-model="homeFilter"
+ label="Home page"
+ :options="homeOptions"
  />
 
  <AppSelect

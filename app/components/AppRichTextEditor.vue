@@ -3,7 +3,7 @@ import {
  useEditor,
  EditorContent,
 } from '@tiptap/vue-3'
-import { Extension } from '@tiptap/core'
+import { Extension, Mark } from '@tiptap/core'
 
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
@@ -16,6 +16,7 @@ const props = withDefaults(defineProps<{
  mode?: 'full' | 'simple'
  compact?: boolean
  spacingControl?: boolean
+ weightControl?: boolean
 }>(), {
  label: '',
  placeholder: 'Write something…',
@@ -23,6 +24,7 @@ const props = withDefaults(defineProps<{
  mode: 'full',
  compact: false,
  spacingControl: false,
+ weightControl: false,
 })
 
 const emit = defineEmits<{
@@ -33,6 +35,24 @@ const isSimple = computed(
  () => props.mode === 'simple',
 )
 
+
+const LightWeight = Mark.create({
+ name: 'lightWeight',
+
+ parseHTML() {
+ return [
+ { tag: 'span[data-text-weight="light"]' },
+ ]
+ },
+
+ renderHTML() {
+ return [
+ 'span',
+ { 'data-text-weight': 'light' },
+ 0,
+ ]
+ },
+})
 
 const ParagraphSpacing = Extension.create({
  name: 'paragraphSpacing',
@@ -118,6 +138,7 @@ const editor = useEditor({
  placeholder:
  props.placeholder,
  }),
+ LightWeight,
  ParagraphSpacing,
  ],
 
@@ -125,7 +146,9 @@ const editor = useEditor({
  attributes: {
  class: [
  'app-rte-content',
- 'min-h-[130px]',
+ props.compact
+ ? 'min-h-[88px]'
+ : 'min-h-[130px]',
  'px-3.5',
  'py-3',
  'text-[14px]',
@@ -224,6 +247,35 @@ function setParagraphSpacing(event: Event) {
  },
  )
  .run()
+}
+
+function toggleBold() {
+ if (!editor.value) return
+
+ const chain = editor.value
+ .chain()
+ .focus()
+
+ if (props.weightControl) {
+ chain.unsetMark('lightWeight')
+ }
+
+ chain.toggleBold().run()
+}
+
+function toggleLightWeight() {
+ if (!editor.value) return
+
+ const wasActive = editor.value.isActive('lightWeight')
+ const chain = editor.value
+ .chain()
+ .focus()
+
+ if (!wasActive) {
+ chain.unsetBold()
+ }
+
+ chain.toggleMark('lightWeight').run()
 }
 
 function buttonClass(active: boolean) {
@@ -341,13 +393,7 @@ function buttonClass(active: boolean) {
  isActive('bold'),
  )
  "
- @click="
- editor
- .chain()
- .focus()
- .toggleBold()
- .run()
- "
+ @click="toggleBold"
  >
  B
  </button>
@@ -422,6 +468,36 @@ function buttonClass(active: boolean) {
  "
  >
  U
+ </button>
+
+ <button
+ v-if="props.weightControl"
+ type="button"
+ title="Light weight"
+ class="
+ flex
+ h-7
+ min-w-7
+ items-center
+ justify-center
+
+ rounded-[7px]
+
+ px-1.5
+
+ text-[11px]
+ font-light
+
+ transition
+ "
+ :class="
+ buttonClass(
+ isActive('lightWeight'),
+ )
+ "
+ @click="toggleLightWeight"
+ >
+ Light
  </button>
 
  <template v-if="!isSimple">
@@ -781,6 +857,10 @@ function buttonClass(active: boolean) {
 
 .app-rte-shell :deep(.app-rte-content p) {
  margin: 0.45em 0;
+}
+
+.app-rte-shell :deep(.app-rte-content [data-text-weight="light"]) {
+ font-weight: 300;
 }
 
 /*
