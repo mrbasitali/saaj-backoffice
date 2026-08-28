@@ -57,14 +57,25 @@ const cities = ref<LocationOption[]>([])
 const loadingStates = ref(false)
 const loadingCities = ref(false)
 
+function defaultCountryId() {
+  const pakistan = countries.value.find(
+    (country) => country.name.trim().toLowerCase() === 'pakistan',
+  )
+
+  if (pakistan) return pakistan.id
+  if (countries.value.length === 1) return countries.value[0].id
+
+  return null
+}
+
 async function loadCountries() {
   try {
     const response = await $api<{ data: LocationOption[] }>('/locations/countries')
 
     countries.value = response.data
 
-    if (countries.value.length === 1 && !form.country_id) {
-      form.country_id = countries.value[0].id
+    if (!form.country_id) {
+      form.country_id = defaultCountryId()
     }
   } catch {
     countries.value = []
@@ -143,6 +154,10 @@ async function openAdd() {
 
   if (countries.value.length === 0) await loadCountries()
 
+  if (!form.country_id) {
+    form.country_id = defaultCountryId()
+  }
+
   formOpen.value = true
 }
 
@@ -159,7 +174,7 @@ async function openEdit(address: CustomerAddress) {
 
   if (countries.value.length === 0) await loadCountries()
 
-  form.country_id = address.country_id ?? countries.value[0]?.id ?? null
+  form.country_id = address.country_id ?? defaultCountryId()
 
   if (form.country_id) await loadStates(form.country_id, address.state_id)
 

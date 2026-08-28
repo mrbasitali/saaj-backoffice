@@ -66,7 +66,7 @@ const form = reactive({
  date_of_birth: '',
  address: '',
  city: '',
- country: 'United Arab Emirates',
+ country: 'Pakistan',
  opening_balance: 0,
  current_balance: 0,
  notes: '',
@@ -120,7 +120,7 @@ function resetForm() {
  form.date_of_birth = props.customer?.date_of_birth ?? ''
  form.address = props.customer?.address ?? ''
  form.city = props.customer?.city ?? ''
- form.country = props.customer?.country ?? 'United Arab Emirates'
+ form.country = props.customer?.country ?? 'Pakistan'
  form.opening_balance = props.customer?.opening_balance ?? 0
  form.current_balance = props.customer?.current_balance ?? props.customer?.opening_balance ?? 0
  form.notes = props.customer?.notes ?? ''
@@ -308,14 +308,14 @@ async function submit() {
  <AppInput
  v-model="form.city"
  label="City"
- placeholder="Dubai"
+ placeholder="e.g. Chichawatni"
  :error="fieldErrors.city"
  />
 
  <AppInput
  v-model="form.country"
  label="Country"
- placeholder="United Arab Emirates"
+ placeholder="Pakistan"
  :error="fieldErrors.country"
  />
 

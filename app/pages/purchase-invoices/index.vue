@@ -990,6 +990,14 @@ function nextPage() {
  <AppCard class="hidden overflow-visible xl:block">
  <div class="overflow-hidden">
  <table class="w-full table-fixed divide-y divide-gray-100 dark:divide-white/[0.055]">
+ <colgroup>
+ <col class="w-[18%]">
+ <col class="w-[16%]">
+ <col class="w-[14%]">
+ <col class="w-[14%]">
+ <col class="w-[13%]">
+ <col class="w-[25%]">
+ </colgroup>
  <thead class="bg-gray-950/[0.018] dark:bg-white/[0.025]">
  <tr>
  <th class="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.07em] text-gray-400 dark:text-gray-600">
@@ -1093,7 +1101,7 @@ function nextPage() {
  <td class="px-4 py-3 text-right">
  <div
  v-if="invoice.status === 'draft'"
- class="flex items-center justify-end gap-2"
+ class="flex flex-wrap items-center justify-end gap-2"
  >
  <AppButton
  type="button"
@@ -1125,7 +1133,7 @@ function nextPage() {
 
  <div
  v-else-if="invoice.status === 'received'"
- class="flex items-center justify-end gap-2"
+ class="flex flex-wrap items-center justify-end gap-2"
  >
  <AppButton
  type="button"
@@ -1166,7 +1174,7 @@ function nextPage() {
  </AppButton>
  </div>
 
- <div v-else class="flex items-center justify-end gap-2">
+ <div v-else class="flex flex-wrap items-center justify-end gap-2">
  <AppButton
  type="button"
  variant="secondary"
