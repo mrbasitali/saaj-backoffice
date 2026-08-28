@@ -613,13 +613,16 @@ async function confirmDelete() {
  deleteError.value = ''
 
  try {
- await $api(`/admin/purchase-invoices/${invoiceToDelete.value.id}`, {
+ const response = await $api<{ message?: string }>(`/admin/purchase-invoices/${invoiceToDelete.value.id}`, {
  method: 'DELETE',
  })
 
  deleteOpen.value = false
- showNotice('Purchase invoice deleted successfully.')
- await refresh()
+ showNotice(response.message || 'Purchase invoice deleted successfully.')
+ await Promise.all([
+ refresh(),
+ refreshBootstrap(),
+ ])
  } catch (error: any) {
  deleteError.value = extractApiErrorMessage(error, 'Could not delete purchase invoice.')
  } finally {
@@ -1152,6 +1155,15 @@ function nextPage() {
  >
  Print
  </AppButton>
+
+ <AppButton
+ type="button"
+ variant="danger"
+ size="sm"
+ @click="askDelete(invoice)"
+ >
+ Delete
+ </AppButton>
  </div>
 
  <div v-else class="flex items-center justify-end gap-2">
@@ -1274,7 +1286,7 @@ function nextPage() {
 
  <div
  v-else-if="invoice.status === 'received'"
- class="mt-4 grid grid-cols-3 gap-2"
+ class="mt-4 grid grid-cols-2 gap-2"
  >
  <AppButton
  type="button"
@@ -1303,6 +1315,15 @@ function nextPage() {
  @click="printPurchasePdf(invoice)"
  >
  Print
+ </AppButton>
+
+ <AppButton
+ type="button"
+ variant="danger"
+ size="sm"
+ @click="askDelete(invoice)"
+ >
+ Delete
  </AppButton>
  </div>
 
@@ -1390,9 +1411,11 @@ function nextPage() {
 
  <AppConfirmModal
  :open="deleteOpen"
- title="Delete draft purchase invoice?"
- :message="`This will delete “${invoiceToDelete?.invoice_number || 'this draft invoice'}”. Only draft invoices can be deleted.`"
- confirm-label="Delete draft"
+ :title="invoiceToDelete?.status === 'received' ? 'Delete received purchase?' : 'Delete purchase invoice?'"
+ :message="invoiceToDelete?.status === 'received'
+ ? `This permanently deletes “${invoiceToDelete?.invoice_number || 'this purchase'}”, its purchase returns, linked vendor payments and inventory movements. Received stock is reversed first. If any quantity has already been sold, reserved, or otherwise cannot be safely reversed, deletion will be blocked.`
+ : `This permanently deletes “${invoiceToDelete?.invoice_number || 'this purchase'}” and its related draft records.`"
+ :confirm-label="invoiceToDelete?.status === 'received' ? 'Delete & reverse stock' : 'Delete purchase'"
  :loading="deleting"
  :error="deleteError"
  @close="deleteOpen = false"

@@ -34,6 +34,8 @@ type SaleItem = {
  product_variant_id: number
  variant?: ProductVariant | null
  quantity: number
+ returned_quantity?: number
+ returnable_quantity?: number
  unit_price: string | number
  cost_price?: string | number | null
  discount_amount: string | number
@@ -138,6 +140,7 @@ const invoiceOptions = computed(() => [
 ])
 
 const invoiceItems = computed(() => invoiceDetail.value?.items ?? [])
+const returnableInvoiceItems = computed(() => invoiceItems.value.filter((item) => returnableQuantity(item) > 0))
 
 const subtotal = computed(() => {
  return form.items.reduce((sum, item) => {
@@ -197,6 +200,8 @@ function customerName(invoice: SaleInvoice) {
 }
 
 function resetForm() {
+ const previousInvoiceId = form.sale_invoice_id
+
  formError.value = ''
  fieldErrors.value = {}
  invoiceDetail.value = null
@@ -210,6 +215,10 @@ function resetForm() {
  form.reason = ''
  form.notes = ''
  form.items = []
+
+ if (form.sale_invoice_id && Number(previousInvoiceId) === Number(form.sale_invoice_id)) {
+ void fetchInvoice(Number(form.sale_invoice_id))
+ }
 }
 
 async function fetchInvoice(invoiceId: number) {
@@ -220,9 +229,7 @@ async function fetchInvoice(invoiceId: number) {
  try {
  const response = await $api<SaleInvoiceResponse>(`/admin/sale-invoices/${invoiceId}`)
  invoiceDetail.value = response.data
- form.items = []
-
- addItem()
+ populateAllItems()
  } catch (error: any) {
  formError.value = error?.data?.message || 'Could not load sale invoice items.'
  } finally {
@@ -243,7 +250,7 @@ function saleItemOptions(currentItem?: SaleReturnItemForm) {
  .map((item) => ({
  label: saleItemLabel(item),
  value: item.id,
- hint: `Sold ${item.quantity} · Price ${money(item.unit_price)}`,
+ hint: `Returnable ${returnableQuantity(item)} of ${item.quantity} · Price ${money(item.unit_price)}`,
  })),
  ]
 }
@@ -277,16 +284,39 @@ function money(value: string | number | null | undefined) {
  })
 }
 
+function returnableQuantity(saleItem: SaleItem) {
+ const explicit = Number(saleItem.returnable_quantity)
+
+ if (Number.isFinite(explicit)) {
+ return Math.max(0, explicit)
+ }
+
+ return Math.max(0, Number(saleItem.quantity || 0) - Number(saleItem.returned_quantity || 0))
+}
+
+function populateAllItems() {
+ form.items = invoiceItems.value
+ .filter((saleItem) => returnableQuantity(saleItem) > 0)
+ .map((saleItem) => ({
+ sale_item_id: saleItem.id,
+ quantity: returnableQuantity(saleItem),
+ deduction_amount: 0,
+ reason: '',
+ notes: '',
+ }))
+}
+
 function addItem() {
  const firstUnused = invoiceItems.value.find((saleItem) => {
- return !form.items.some((item) => Number(item.sale_item_id) === Number(saleItem.id))
+ return returnableQuantity(saleItem) > 0
+ && !form.items.some((item) => Number(item.sale_item_id) === Number(saleItem.id))
  })
 
  if (!firstUnused) return
 
  form.items.push({
  sale_item_id: firstUnused.id,
- quantity: 1,
+ quantity: returnableQuantity(firstUnused),
  deduction_amount: 0,
  reason: '',
  notes: '',
@@ -299,7 +329,7 @@ function removeItem(index: number) {
 
 function useFullQuantity(item: SaleReturnItemForm) {
  const saleItem = selectedSaleItem(item.sale_item_id)
- item.quantity = Number(saleItem?.quantity || 1)
+ item.quantity = saleItem ? returnableQuantity(saleItem) : 1
 }
 
 function normalizeErrors(error: any) {
@@ -471,7 +501,7 @@ async function submit() {
  </h3>
 
  <p class="mt-1 text-[12px] leading-5 text-gray-400 dark:text-gray-500">
- Choose sold items from the selected sale invoice. Approval increases stock at the invoice location.
+ All remaining sold items are selected automatically. Remove lines or reduce quantities if the customer is returning only part of the sale.
  </p>
  </div>
 
@@ -479,7 +509,7 @@ async function submit() {
  type="button"
  variant="secondary"
  size="sm"
- :disabled="fetchingInvoice || invoiceItems.length === form.items.length"
+ :disabled="fetchingInvoice || returnableInvoiceItems.length === form.items.length"
  @click="addItem"
  >
  Add item
@@ -494,10 +524,10 @@ async function submit() {
  </div>
 
  <div
- v-else-if="invoiceItems.length === 0"
+ v-else-if="returnableInvoiceItems.length === 0"
  class="mt-5 rounded-[12px] bg-amber-500/[0.07] p-4 text-sm leading-6 text-amber-800 dark:bg-amber-500/10 dark:text-amber-200"
  >
- This invoice has no items available for return.
+ This invoice has no remaining sold items available for return. Any quantities already used in another active return are excluded.
  </div>
 
  <div

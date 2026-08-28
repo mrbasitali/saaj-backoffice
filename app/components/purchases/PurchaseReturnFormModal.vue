@@ -39,6 +39,8 @@ type PurchaseItem = {
  product_variant_id: number
  variant?: ProductVariant | null
  quantity: number
+ returned_quantity?: number
+ returnable_quantity?: number
  unit_cost: string | number
  discount_amount: string | number
  tax_amount: string | number
@@ -140,6 +142,7 @@ const invoiceOptions = computed(() => [
 ])
 
 const invoiceItems = computed(() => invoiceDetail.value?.items ?? [])
+const returnableInvoiceItems = computed(() => invoiceItems.value.filter((item) => returnableQuantity(item) > 0))
 
 const subtotal = computed(() => {
  return form.items.reduce((sum, item) => {
@@ -195,6 +198,8 @@ function todayDate() {
 }
 
 function resetForm() {
+ const previousInvoiceId = form.purchase_invoice_id
+
  formError.value = ''
  fieldErrors.value = {}
  invoiceDetail.value = null
@@ -208,6 +213,10 @@ function resetForm() {
  form.reason = ''
  form.notes = ''
  form.items = []
+
+ if (form.purchase_invoice_id && Number(previousInvoiceId) === Number(form.purchase_invoice_id)) {
+ void fetchInvoice(Number(form.purchase_invoice_id))
+ }
 }
 
 async function fetchInvoice(invoiceId: number) {
@@ -218,9 +227,7 @@ async function fetchInvoice(invoiceId: number) {
  try {
  const response = await $api<PurchaseInvoiceResponse>(`/admin/purchase-invoices/${invoiceId}`)
  invoiceDetail.value = response.data
- form.items = []
-
- addItem()
+ populateAllItems()
  } catch (error: any) {
  formError.value = error?.data?.message || 'Could not load purchase invoice items.'
  } finally {
@@ -241,7 +248,7 @@ function purchaseItemOptions(currentItem?: PurchaseReturnItemForm) {
  .map((item) => ({
  label: purchaseItemLabel(item),
  value: item.id,
- hint: `Received ${item.quantity} · Cost ${money(item.unit_cost)}`,
+ hint: `Returnable ${returnableQuantity(item)} of ${item.quantity} · Cost ${money(item.unit_cost)}`,
  })),
  ]
 }
@@ -275,16 +282,39 @@ function money(value: string | number | null | undefined) {
  })
 }
 
+function returnableQuantity(purchaseItem: PurchaseItem) {
+ const explicit = Number(purchaseItem.returnable_quantity)
+
+ if (Number.isFinite(explicit)) {
+ return Math.max(0, explicit)
+ }
+
+ return Math.max(0, Number(purchaseItem.quantity || 0) - Number(purchaseItem.returned_quantity || 0))
+}
+
+function populateAllItems() {
+ form.items = invoiceItems.value
+ .filter((purchaseItem) => returnableQuantity(purchaseItem) > 0)
+ .map((purchaseItem) => ({
+ purchase_item_id: purchaseItem.id,
+ quantity: returnableQuantity(purchaseItem),
+ deduction_amount: 0,
+ reason: '',
+ notes: '',
+ }))
+}
+
 function addItem() {
  const firstUnused = invoiceItems.value.find((purchaseItem) => {
- return !form.items.some((item) => Number(item.purchase_item_id) === Number(purchaseItem.id))
+ return returnableQuantity(purchaseItem) > 0
+ && !form.items.some((item) => Number(item.purchase_item_id) === Number(purchaseItem.id))
  })
 
  if (!firstUnused) return
 
  form.items.push({
  purchase_item_id: firstUnused.id,
- quantity: 1,
+ quantity: returnableQuantity(firstUnused),
  deduction_amount: 0,
  reason: '',
  notes: '',
@@ -297,7 +327,7 @@ function removeItem(index: number) {
 
 function useFullQuantity(item: PurchaseReturnItemForm) {
  const purchaseItem = selectedPurchaseItem(item.purchase_item_id)
- item.quantity = Number(purchaseItem?.quantity || 1)
+ item.quantity = purchaseItem ? returnableQuantity(purchaseItem) : 1
 }
 
 function normalizeErrors(error: any) {
@@ -469,7 +499,7 @@ async function submit() {
  </h3>
 
  <p class="mt-1 text-[12px] leading-5 text-gray-400 dark:text-gray-500">
- Choose items from the selected purchase invoice. Approval reduces stock from the invoice location.
+ All remaining invoice items are selected automatically. Remove lines or reduce quantities if you only want a partial return.
  </p>
  </div>
 
@@ -477,7 +507,7 @@ async function submit() {
  type="button"
  variant="secondary"
  size="sm"
- :disabled="fetchingInvoice || invoiceItems.length === form.items.length"
+ :disabled="fetchingInvoice || returnableInvoiceItems.length === form.items.length"
  @click="addItem"
  >
  Add item
@@ -492,10 +522,10 @@ async function submit() {
  </div>
 
  <div
- v-else-if="invoiceItems.length === 0"
+ v-else-if="returnableInvoiceItems.length === 0"
  class="mt-5 rounded-[12px] bg-amber-500/[0.07] p-4 text-sm leading-6 text-amber-800 dark:bg-amber-500/10 dark:text-amber-200"
  >
- This invoice has no items available for return.
+ This invoice has no remaining items available for return. Any quantities already used in another active return are excluded.
  </div>
 
  <div
