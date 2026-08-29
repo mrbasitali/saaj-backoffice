@@ -176,8 +176,40 @@ const previewCodeValue = computed(() => {
 })
 
 const previewPrice = computed(() => {
- return Number(form.sale_price || form.price || 0)
+ return Number(form.sale_price !== '' ? form.sale_price : (form.price || 0))
 })
+
+const pricingPreview = computed(() => {
+ const originalPrice = Number(form.price)
+ const salePrice = Number(form.sale_price)
+ const hasOriginalPrice = form.price !== '' && Number.isFinite(originalPrice)
+ const hasSalePrice = form.sale_price !== '' && Number.isFinite(salePrice)
+ const isOnSale = hasOriginalPrice && hasSalePrice && salePrice < originalPrice
+
+ return {
+  originalPrice,
+  salePrice,
+  isOnSale,
+  savings: isOnSale ? originalPrice - salePrice : 0,
+  discountPercentage: isOnSale && originalPrice > 0
+   ? Math.round(((originalPrice - salePrice) / originalPrice) * 100)
+   : 0,
+ }
+})
+
+const salePriceError = computed(() => {
+ if (form.sale_price === '' || form.price === '') {
+  return ''
+ }
+
+ return Number(form.sale_price) >= Number(form.price)
+  ? 'Sale price must be lower than the original price.'
+  : ''
+})
+
+function money(value: number) {
+ return `Rs ${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}`
+}
 
 const selectedOptionCount = computed(() => {
  return Object.values(selectedValues).filter(Boolean).length
@@ -574,6 +606,16 @@ async function submit() {
  'Price is required.'
 
  return
+ }
+
+ if (salePriceError.value) {
+  activeSection.value = 'pricing'
+  fieldErrors.value = {
+   ...fieldErrors.value,
+   sale_price: salePriceError.value,
+  }
+  formError.value = salePriceError.value
+  return
  }
 
  saving.value = true
@@ -1041,7 +1083,7 @@ async function submit() {
  dark:text-gray-600
  "
  >
- Set selling price, optional promotional pricing and cost.
+ Set the original storefront price, an optional sale price and internal cost.
  </p>
  </div>
 
@@ -1057,35 +1099,51 @@ async function submit() {
  >
  <AppInput
  v-model="form.price"
- label="Price"
+ label="Original price"
  type="number"
  placeholder="0.00"
+ :min="0"
+ step="0.01"
  :error="fieldErrors.price"
- />
+ >
+ <template #prefix>Rs</template>
+ </AppInput>
 
  <AppInput
  v-model="form.sale_price"
  label="Sale price"
  type="number"
- placeholder="Optional"
- :error="fieldErrors.sale_price"
- />
+ placeholder="No active sale"
+ :min="0"
+ step="0.01"
+ :error="fieldErrors.sale_price || salePriceError"
+ >
+ <template #prefix>Rs</template>
+ </AppInput>
 
  <AppInput
  v-model="form.compare_at_price"
- label="Compare-at price"
+ label="Reference / MSRP"
  type="number"
- placeholder="Optional was-price"
+ placeholder="Optional reference"
+ :min="0"
+ step="0.01"
  :error="fieldErrors.compare_at_price"
- />
+ >
+ <template #prefix>Rs</template>
+ </AppInput>
 
  <AppInput
  v-model="form.cost_price"
  label="Cost price"
  type="number"
  placeholder="0.00"
+ :min="0"
+ step="0.01"
  :error="fieldErrors.cost_price"
- />
+ >
+ <template #prefix>Rs</template>
+ </AppInput>
  </div>
 
  <div
@@ -1111,7 +1169,7 @@ async function submit() {
  so this cost acts mainly as the current starting value.
  </div>
 
- <!-- Compact price preview -->
+ <!-- Storefront price preview -->
  <div
  class="
  mt-5
@@ -1143,7 +1201,7 @@ async function submit() {
  dark:text-gray-600
  "
  >
- Selling price
+ Storefront price preview
  </p>
 
  <p
@@ -1159,23 +1217,12 @@ async function submit() {
  dark:text-gray-100
  "
  >
- {{
- Number(
- form.sale_price ||
- form.price ||
- 0,
- ).toLocaleString(
- undefined,
- {
- maximumFractionDigits: 2,
- },
- )
- }}
+ {{ money(pricingPreview.isOnSale ? pricingPreview.salePrice : pricingPreview.originalPrice || 0) }}
  </p>
  </div>
 
  <p
- v-if="form.sale_price && form.price"
+ v-if="pricingPreview.isOnSale"
  class="
  text-[12px]
  tabular-nums
@@ -1185,16 +1232,23 @@ async function submit() {
  dark:text-gray-600
  "
  >
- {{
- Number(form.price).toLocaleString(
- undefined,
- {
- maximumFractionDigits: 2,
- },
- )
- }}
+ {{ money(pricingPreview.originalPrice) }}
  </p>
+
+ <span
+ v-if="pricingPreview.isOnSale"
+ class="rounded-full bg-gray-950 px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.1em] text-white dark:bg-white dark:text-gray-950"
+ >
+ Save {{ pricingPreview.discountPercentage }}%
+ </span>
  </div>
+
+ <p
+ v-if="pricingPreview.isOnSale"
+ class="mt-3 text-[11px] leading-5 text-gray-500 dark:text-gray-400"
+ >
+ Customers save {{ money(pricingPreview.savings) }}. Checkout and POS will charge the sale price.
+ </p>
  </section>
 
  <!-- INVENTORY -->

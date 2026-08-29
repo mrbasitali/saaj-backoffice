@@ -52,6 +52,8 @@ type ProductImage = {
 type DefaultVariant = {
  id: number
  price: number | string
+ sale_price: number | string | null
+ compare_at_price?: number | string | null
  attribute_values?: unknown[]
 }
 
@@ -180,6 +182,7 @@ const form = reactive({
  care_instructions: '',
  card_description: '',
  price: '',
+ sale_price: '',
  meta_title: '',
  meta_description: '',
  is_active: true,
@@ -213,6 +216,38 @@ const isSimpleProduct = computed(() => {
  ) === 0
  )
 })
+
+const quickPricing = computed(() => {
+ const originalPrice = Number(form.price)
+ const salePrice = Number(form.sale_price)
+ const hasOriginalPrice = form.price !== '' && Number.isFinite(originalPrice)
+ const hasSalePrice = form.sale_price !== '' && Number.isFinite(salePrice)
+ const isOnSale = hasOriginalPrice && hasSalePrice && salePrice < originalPrice
+
+ return {
+  originalPrice,
+  salePrice,
+  isOnSale,
+  savings: isOnSale ? originalPrice - salePrice : 0,
+  discountPercentage: isOnSale && originalPrice > 0
+   ? Math.round(((originalPrice - salePrice) / originalPrice) * 100)
+   : 0,
+ }
+})
+
+const quickSalePriceError = computed(() => {
+ if (!isSimpleProduct.value || form.sale_price === '' || form.price === '') {
+  return ''
+ }
+
+ return Number(form.sale_price) >= Number(form.price)
+  ? 'Sale price must be lower than the original price.'
+  : ''
+})
+
+function money(value: number) {
+ return `Rs ${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}`
+}
 
 const title = computed(() => {
  return props.mode === 'create'
@@ -404,6 +439,18 @@ function resetForm() {
  props.product
  .default_variant
  .price,
+ )
+ : ''
+
+ form.sale_price =
+ isSimpleProduct.value
+ && props.product
+ ?.default_variant
+ ?.sale_price != null
+ ? String(
+ props.product
+ .default_variant
+ .sale_price,
  )
  : ''
 
@@ -622,6 +669,11 @@ function productPayload() {
  ? null
  : Number(form.price),
 
+ sale_price:
+ form.sale_price === ''
+ ? null
+ : Number(form.sale_price),
+
  meta_title:
  form.meta_title
  || null,
@@ -706,6 +758,16 @@ function buildFormData() {
 async function submit(
  closeAfterSave = false,
 ): Promise<Product | null> {
+ if (quickSalePriceError.value) {
+  activeSection.value = 'details'
+  fieldErrors.value = {
+   ...fieldErrors.value,
+   sale_price: quickSalePriceError.value,
+  }
+  formError.value = quickSalePriceError.value
+  return null
+ }
+
  saving.value = true
  formError.value = ''
  fieldErrors.value = {}
@@ -1054,17 +1116,81 @@ async function previewStorefront() {
  isSimpleProduct
  "
  v-model="form.price"
- label="Price"
+ label="Original price"
  type="number"
  placeholder="0.00"
+ :min="0"
+ step="0.01"
  :error="
  fieldErrors.price
  "
- />
+ >
+ <template #prefix>Rs</template>
+ </AppInput>
+
+ <AppInput
+ v-if="
+ isSimpleProduct
+ "
+ v-model="form.sale_price"
+ label="Sale price (optional)"
+ type="number"
+ placeholder="No active sale"
+ :min="0"
+ step="0.01"
+ :error="
+ fieldErrors.sale_price
+ || quickSalePriceError
+ "
+ >
+ <template #prefix>Rs</template>
+ </AppInput>
+
+ <div
+ v-if="isSimpleProduct"
+ class="md:col-span-2 rounded-[14px] border border-gray-950/[0.07] bg-gray-950/[0.025] p-4 dark:border-white/[0.08] dark:bg-white/[0.035]"
+ >
+ <div class="flex flex-wrap items-end justify-between gap-4">
+ <div>
+ <p class="text-[10px] font-semibold uppercase tracking-[0.12em] text-gray-400 dark:text-gray-500">
+ Storefront price preview
+ </p>
+
+ <div class="mt-2 flex flex-wrap items-center gap-2.5">
+ <span class="text-[22px] font-semibold tabular-nums tracking-[-0.03em] text-gray-950 dark:text-white">
+ {{ money(quickPricing.isOnSale ? quickPricing.salePrice : quickPricing.originalPrice || 0) }}
+ </span>
+
+ <s
+ v-if="quickPricing.isOnSale"
+ class="text-[13px] tabular-nums text-gray-400 decoration-gray-400/70 dark:text-gray-500"
+ >
+ {{ money(quickPricing.originalPrice) }}
+ </s>
+
+ <span
+ v-if="quickPricing.isOnSale"
+ class="rounded-full bg-gray-950 px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.1em] text-white dark:bg-white dark:text-gray-950"
+ >
+ Save {{ quickPricing.discountPercentage }}%
+ </span>
+ </div>
+ </div>
+
+ <p class="max-w-sm text-[11px] leading-5 text-gray-500 dark:text-gray-400">
+ <template v-if="quickPricing.isOnSale">
+ Customers save {{ money(quickPricing.savings) }}. The sale price is used by the storefront, checkout and POS.
+ </template>
+ <template v-else>
+ Add a sale price lower than the original price to activate the storefront promotion.
+ </template>
+ </p>
+ </div>
+ </div>
 
  <div
  v-else
- class="
+ class="md:col-span-2
  flex
  min-h-10
  items-center

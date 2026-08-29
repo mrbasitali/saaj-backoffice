@@ -9,6 +9,9 @@ withDefaults(defineProps<{
  required?: boolean
  autocomplete?: string
  disabled?: boolean
+ min?: string | number
+ max?: string | number
+ step?: string | number
 }>(), {
  label: undefined,
  type: 'text',
@@ -17,6 +20,9 @@ withDefaults(defineProps<{
  required: false,
  autocomplete: undefined,
  disabled: false,
+ min: undefined,
+ max: undefined,
+ step: undefined,
 })
 
 const inputRef = ref<HTMLInputElement | null>(null)
@@ -111,6 +117,9 @@ defineExpose({
  :required="required"
  :autocomplete="autocomplete"
  :disabled="disabled"
+ :min="min"
+ :max="max"
+ :step="step"
  class="
  h-10
  min-w-0
