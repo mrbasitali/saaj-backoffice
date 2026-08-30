@@ -337,6 +337,14 @@ function label(value: string | null | undefined) {
  return String(value || '').replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
 }
 
+function isInvoiceOpeningPayment(payment: CustomerPayment) {
+ return payment.status === 'received' && String(payment.notes || '').startsWith('Auto-recorded —')
+}
+
+function canDeletePayment(payment: CustomerPayment) {
+ return !isInvoiceOpeningPayment(payment)
+}
+
 function showNotice(message: string) {
  notice.value = message
 
@@ -446,13 +454,16 @@ async function confirmDelete() {
  deleteError.value = ''
 
  try {
- await $api(`/admin/customer-payments/${paymentToDelete.value.id}`, {
+ const response = await $api<{ message?: string }>(`/admin/customer-payments/${paymentToDelete.value.id}`, {
  method: 'DELETE',
  })
 
  deleteOpen.value = false
- showNotice('Customer payment deleted successfully.')
- await refresh()
+ showNotice(response.message || 'Customer payment deleted successfully.')
+ await Promise.all([
+ refresh(),
+ refreshBootstrap(),
+ ])
  } catch (error: any) {
  deleteError.value = extractApiErrorMessage(error, 'Could not delete customer payment.')
  } finally {
@@ -913,10 +924,10 @@ function nextPage() {
 
  <td class="px-4 py-3 text-right">
  <div
- v-if="payment.status === 'draft'"
  class="flex items-center justify-end gap-2"
  >
  <AppButton
+ v-if="payment.status === 'draft'"
  type="button"
  size="sm"
  @click="askReceive(payment)"
@@ -925,20 +936,7 @@ function nextPage() {
  </AppButton>
 
  <AppButton
- type="button"
- variant="danger"
- size="sm"
- @click="askDelete(payment)"
- >
- Delete
- </AppButton>
- </div>
-
- <div
- v-else-if="payment.status === 'received'"
- class="flex items-center justify-end gap-2"
- >
- <AppButton
+ v-if="payment.status === 'received'"
  type="button"
  variant="secondary"
  size="sm"
@@ -947,14 +945,24 @@ function nextPage() {
  >
  Receipt
  </AppButton>
- </div>
+
+ <AppButton
+ v-if="canDeletePayment(payment)"
+ type="button"
+ variant="danger"
+ size="sm"
+ @click="askDelete(payment)"
+ >
+ Delete
+ </AppButton>
 
  <span
- v-else
+ v-if="!canDeletePayment(payment)"
  class="text-xs font-medium text-gray-400 dark:text-gray-500"
  >
- Locked
+ Invoice entry
  </span>
+ </div>
  </td>
  </tr>
  </tbody>
@@ -995,10 +1003,11 @@ function nextPage() {
  </div>
 
  <div
- v-if="payment.status === 'draft'"
- class="mt-4 grid grid-cols-2 gap-2"
+ class="mt-4 grid gap-2"
+ :class="canDeletePayment(payment) ? 'grid-cols-2' : 'grid-cols-1'"
  >
  <AppButton
+ v-if="payment.status === 'draft'"
  type="button"
  size="sm"
  @click="askReceive(payment)"
@@ -1007,20 +1016,7 @@ function nextPage() {
  </AppButton>
 
  <AppButton
- type="button"
- variant="danger"
- size="sm"
- @click="askDelete(payment)"
- >
- Delete
- </AppButton>
- </div>
-
- <div
- v-else-if="payment.status === 'received'"
- class="mt-4"
- >
- <AppButton
+ v-if="payment.status === 'received'"
  type="button"
  variant="secondary"
  size="sm"
@@ -1028,6 +1024,16 @@ function nextPage() {
  @click="printReceipt(payment)"
  >
  Receipt
+ </AppButton>
+
+ <AppButton
+ v-if="canDeletePayment(payment)"
+ type="button"
+ variant="danger"
+ size="sm"
+ @click="askDelete(payment)"
+ >
+ Delete
  </AppButton>
  </div>
  </AppCard>
@@ -1092,9 +1098,11 @@ function nextPage() {
 
  <AppConfirmModal
  :open="deleteOpen"
- title="Delete draft customer payment?"
- :message="`This will delete “${paymentToDelete?.payment_number || 'this draft payment'}”. Only draft payments can be deleted.`"
- confirm-label="Delete draft"
+ :title="paymentToDelete?.status === 'received' ? 'Delete received customer payment?' : 'Delete customer payment?'"
+ :message="paymentToDelete?.status === 'received'
+ ? `This deletes “${paymentToDelete?.payment_number || 'this customer payment'}” and restores its amount to the customer balance and linked sale invoice.`
+ : `This deletes “${paymentToDelete?.payment_number || 'this customer payment'}”.`"
+ confirm-label="Delete payment"
  :loading="deleting"
  :error="deleteError"
  @close="deleteOpen = false"

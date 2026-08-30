@@ -328,6 +328,14 @@ function label(value: string) {
  return value.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
 }
 
+function isInvoiceOpeningPayment(payment: VendorPayment) {
+ return payment.status === 'paid' && String(payment.notes || '').startsWith('Auto-recorded —')
+}
+
+function canDeletePayment(payment: VendorPayment) {
+ return !isInvoiceOpeningPayment(payment)
+}
+
 function showNotice(message: string) {
  notice.value = message
 
@@ -423,13 +431,16 @@ async function confirmDelete() {
  deleteError.value = ''
 
  try {
- await $api(`/admin/vendor-payments/${paymentToDelete.value.id}`, {
+ const response = await $api<{ message?: string }>(`/admin/vendor-payments/${paymentToDelete.value.id}`, {
  method: 'DELETE',
  })
 
  deleteOpen.value = false
- showNotice('Vendor payment deleted successfully.')
- await refresh()
+ showNotice(response.message || 'Vendor payment deleted successfully.')
+ await Promise.all([
+ refresh(),
+ refreshBootstrap(),
+ ])
  } catch (error: any) {
  deleteError.value = extractApiErrorMessage(error, 'Could not delete vendor payment.')
  } finally {
@@ -836,10 +847,11 @@ function nextPage() {
 
  <td class="px-4 py-3 text-right">
  <div
- v-if="payment.status === 'draft'"
+ v-if="canDeletePayment(payment)"
  class="flex items-center justify-end gap-2"
  >
  <AppButton
+ v-if="payment.status === 'draft'"
  type="button"
  size="sm"
  @click="askPay(payment)"
@@ -861,7 +873,7 @@ function nextPage() {
  v-else
  class="text-xs font-medium text-gray-400 dark:text-gray-500"
  >
- Locked
+ Invoice entry
  </span>
  </td>
  </tr>
@@ -903,10 +915,12 @@ function nextPage() {
  </div>
 
  <div
- v-if="payment.status === 'draft'"
- class="mt-4 grid grid-cols-2 gap-2"
+ v-if="canDeletePayment(payment)"
+ class="mt-4 grid gap-2"
+ :class="payment.status === 'draft' ? 'grid-cols-2' : 'grid-cols-1'"
  >
  <AppButton
+ v-if="payment.status === 'draft'"
  type="button"
  size="sm"
  @click="askPay(payment)"
@@ -985,9 +999,11 @@ function nextPage() {
 
  <AppConfirmModal
  :open="deleteOpen"
- title="Delete draft vendor payment?"
- :message="`This will delete “${paymentToDelete?.payment_number || 'this draft payment'}”. Only draft payments can be deleted.`"
- confirm-label="Delete draft"
+ :title="paymentToDelete?.status === 'paid' ? 'Delete paid vendor payment?' : 'Delete vendor payment?'"
+ :message="paymentToDelete?.status === 'paid'
+ ? `This deletes “${paymentToDelete?.payment_number || 'this vendor payment'}” and restores its amount to the vendor balance and linked purchase invoice.`
+ : `This deletes “${paymentToDelete?.payment_number || 'this vendor payment'}”.`"
+ confirm-label="Delete payment"
  :loading="deleting"
  :error="deleteError"
  @close="deleteOpen = false"

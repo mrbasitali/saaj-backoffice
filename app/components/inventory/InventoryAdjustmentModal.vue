@@ -11,6 +11,7 @@ type InventoryLocation = {
 type ProductVariant = {
  id: number
  product_id: number
+ product?: Product | null
  sku: string | null
  barcode: string | null
  name: string | null
@@ -18,6 +19,13 @@ type ProductVariant = {
  min_stock_level: number
  track_inventory: boolean
  is_active: boolean
+ primary_image?: {
+ image_url: string
+ optimized_urls?: {
+ thumb?: string | null
+ card?: string | null
+ }
+ } | null
 }
 
 type Product = {
@@ -25,7 +33,13 @@ type Product = {
  name: string
  slug: string
  is_active: boolean
- variants?: ProductVariant[]
+ primary_image?: {
+ image_url: string
+ optimized_urls?: {
+ thumb?: string | null
+ card?: string | null
+ }
+ } | null
 }
 
 type InventoryStock = {
@@ -42,9 +56,12 @@ type InventoryAdjustmentResponse = {
  message?: string
 }
 
+type ProductVariantSearchResponse = {
+ data: ProductVariant[]
+}
+
 const props = defineProps<{
  open: boolean
- products: Product[]
  locations: InventoryLocation[]
 }>()
 
@@ -56,11 +73,14 @@ const emit = defineEmits<{
 const { $api } = useNuxtApp()
 
 const saving = ref(false)
+const variantsLoading = ref(false)
 const formError = ref('')
 const fieldErrors = ref<Record<string, string>>({})
+const variantResults = ref<ProductVariant[]>([])
+const selectedVariant = ref<ProductVariant | null>(null)
+let variantRequestSequence = 0
 
 const form = reactive({
- product_id: null as number | null,
  product_variant_id: null as number | null,
  inventory_location_id: null as number | null,
  type: 'adjustment',
@@ -74,14 +94,6 @@ const typeOptions = [
  { label: 'Damaged / write-off', value: 'damaged' },
 ]
 
-const productOptions = computed(() => [
- { label: 'Select product', value: null },
- ...props.products.map((product) => ({
- label: product.name,
- value: product.id,
- })),
-])
-
 const locationOptions = computed(() => [
  { label: 'Select location', value: null },
  ...props.locations
@@ -92,29 +104,73 @@ const locationOptions = computed(() => [
  })),
 ])
 
-const selectedProduct = computed(() => {
- return props.products.find((product) => product.id === Number(form.product_id)) || null
-})
-
 const variantOptions = computed(() => [
- { label: 'Select variant', value: null },
- ...(selectedProduct.value?.variants || []).map((variant) => ({
- label: variantLabel(variant),
+ ...(selectedVariant.value ? [selectedVariant.value] : []),
+ ...variantResults.value.filter((variant) => variant.id !== selectedVariant.value?.id),
+].map((variant) => ({
+ label: variant.product?.name || 'Unknown product',
  value: variant.id,
- })),
-])
+ hint: variantLabel(variant),
+ imageUrl: variantImage(variant),
+})))
 
-const selectedVariant = computed(() => {
- return selectedProduct.value?.variants?.find((variant) => variant.id === Number(form.product_variant_id)) || null
+const selectedProduct = computed(() => {
+ return selectedVariant.value?.product || null
 })
 
 watch(
  () => props.open,
- (open) => {
- if (!open) return
+ async (open) => {
+ if (!open) {
+ variantRequestSequence++
+ return
+ }
+
  resetForm()
+ await searchVariants('')
  },
 )
+
+async function searchVariants(term: string) {
+ if (!props.open) return
+
+ const sequence = ++variantRequestSequence
+ variantsLoading.value = true
+
+ try {
+ const response = await $api<ProductVariantSearchResponse>('/admin/product-variants/search', {
+ query: {
+ q: term,
+ limit: 20,
+ },
+ })
+
+ if (sequence !== variantRequestSequence) return
+
+ variantResults.value = response.data ?? []
+ formError.value = ''
+ } catch (error: any) {
+ if (sequence !== variantRequestSequence) return
+
+ variantResults.value = []
+ formError.value = error?.data?.message || 'Could not load products. Please try searching again.'
+ } finally {
+ if (sequence === variantRequestSequence) variantsLoading.value = false
+ }
+}
+
+function selectVariant(value: string | number | boolean | null) {
+ selectedVariant.value = variantResults.value.find((variant) => variant.id === Number(value)) || null
+}
+
+function variantImage(variant: ProductVariant) {
+ const image = variant.primary_image || variant.product?.primary_image
+
+ return image?.optimized_urls?.thumb
+ || image?.optimized_urls?.card
+ || image?.image_url
+ || null
+}
 
 watch(
  () => props.locations,
@@ -126,14 +182,6 @@ watch(
  || null
  },
  { immediate: true },
-)
-
-watch(
- () => form.product_id,
- () => {
- const firstVariant = selectedProduct.value?.variants?.[0]
- form.product_variant_id = firstVariant?.id || null
- },
 )
 
 watch(
@@ -153,8 +201,9 @@ function resetForm() {
  formError.value = ''
  fieldErrors.value = {}
 
- form.product_id = props.products[0]?.id || null
- form.product_variant_id = props.products[0]?.variants?.[0]?.id || null
+ form.product_variant_id = null
+ selectedVariant.value = null
+ variantResults.value = []
  form.inventory_location_id = props.locations.find((location) => location.is_default && location.is_active)?.id
  || props.locations.find((location) => location.is_active)?.id
  || null
@@ -167,6 +216,7 @@ function variantLabel(variant: ProductVariant) {
  const parts = [
  variant.option_summary || variant.name || 'Default',
  variant.sku ? `SKU ${variant.sku}` : null,
+ variant.barcode ? `Barcode ${variant.barcode}` : null,
  !variant.is_active ? 'Inactive' : null,
  ].filter(Boolean)
 
@@ -245,15 +295,17 @@ async function submit() {
 
  <div class="grid gap-5 lg:grid-cols-2">
  <AppSelect
- v-model="form.product_id"
- label="Product"
- :options="productOptions"
- />
-
- <AppSelect
  v-model="form.product_variant_id"
- label="Variant"
+ class="lg:col-span-2"
+ label="Product / variant"
  :options="variantOptions"
+ placeholder="Search product, SKU, barcode or variant..."
+ searchable
+ remote
+ :loading="variantsLoading"
+ :error="fieldErrors.product_variant_id"
+ @search="searchVariants"
+ @change="selectVariant"
  />
 
  <AppSelect

@@ -723,12 +723,12 @@ async function confirmDelete() {
  deleteError.value = ''
 
  try {
- await $api(`/admin/sale-invoices/${invoiceToDelete.value.id}`, {
+ const response = await $api<{ message?: string }>(`/admin/sale-invoices/${invoiceToDelete.value.id}`, {
  method: 'DELETE',
  })
 
  deleteOpen.value = false
- showNotice('Sale invoice deleted successfully.')
+ showNotice(response.message || 'Sale invoice deleted successfully.')
  await refresh()
  } catch (error: any) {
  deleteError.value = extractApiErrorMessage(error, 'Could not delete sale invoice.')
@@ -1344,16 +1344,23 @@ function nextPage() {
  <AppActionMenuItem @click="printInvoicePdf(invoice); close()">
  Download PDF
  </AppActionMenuItem>
+
+ <AppActionMenuItem danger @click="askDelete(invoice); close()">
+ Delete sale
+ </AppActionMenuItem>
  </template>
  </AppActionMenu>
  </template>
 
- <span
+ <AppButton
  v-else
- class="text-xs font-medium text-gray-400 dark:text-gray-500"
+ type="button"
+ variant="danger"
+ size="sm"
+ @click="askDelete(invoice)"
  >
- Locked
- </span>
+ Delete
+ </AppButton>
  </div>
  </td>
  </tr>
@@ -1519,13 +1526,17 @@ function nextPage() {
  <AppActionMenuItem @click="printInvoicePdf(invoice); close()">
  Download PDF
  </AppActionMenuItem>
+
+ <AppActionMenuItem danger @click="askDelete(invoice); close()">
+ Delete sale
+ </AppActionMenuItem>
  </template>
  </AppActionMenu>
  </div>
 
  <div
  v-else
- class="mt-4"
+ class="mt-4 grid grid-cols-2 gap-2"
  >
  <AppButton
  type="button"
@@ -1535,6 +1546,15 @@ function nextPage() {
  @click="openView(invoice)"
  >
  View
+ </AppButton>
+
+ <AppButton
+ type="button"
+ variant="danger"
+ size="sm"
+ @click="askDelete(invoice)"
+ >
+ Delete
  </AppButton>
  </div>
  </AppCard>
@@ -1620,9 +1640,11 @@ function nextPage() {
 
  <AppConfirmModal
  :open="deleteOpen"
- title="Delete draft sale invoice?"
- :message="`This will delete “${invoiceToDelete?.invoice_number || 'this draft invoice'}”. Only draft invoices can be deleted.`"
- confirm-label="Delete draft"
+ :title="invoiceToDelete?.status === 'completed' ? 'Delete completed sale?' : 'Delete sale invoice?'"
+ :message="invoiceToDelete?.status === 'completed'
+ ? `This permanently deletes “${invoiceToDelete?.invoice_number || 'this sale'}” and its returns and payment records. Only the net quantity not already returned will be restored to stock, and the customer balance will be corrected.`
+ : `This permanently deletes “${invoiceToDelete?.invoice_number || 'this sale invoice'}”.`"
+ confirm-label="Delete sale"
  :loading="deleting"
  :error="deleteError"
  @close="deleteOpen = false"

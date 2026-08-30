@@ -98,7 +98,7 @@ export function useFloatingPanel(
     measure()
   }
 
-  function onDocumentClick(event: MouseEvent) {
+  function onDocumentPointerDown(event: PointerEvent) {
     const target = event.target as Node
 
     if (triggerRef.value?.contains(target)) return
@@ -123,13 +123,13 @@ export function useFloatingPanel(
       measure()
       window.addEventListener('scroll', onScrollOrResize, true)
       window.addEventListener('resize', onScrollOrResize)
-      document.addEventListener('click', onDocumentClick)
+      document.addEventListener('pointerdown', onDocumentPointerDown, true)
       document.addEventListener('keydown', onKeydown)
     } else {
       style.visibility = 'hidden'
       window.removeEventListener('scroll', onScrollOrResize, true)
       window.removeEventListener('resize', onScrollOrResize)
-      document.removeEventListener('click', onDocumentClick)
+      document.removeEventListener('pointerdown', onDocumentPointerDown, true)
       document.removeEventListener('keydown', onKeydown)
     }
   })
@@ -139,7 +139,7 @@ export function useFloatingPanel(
 
     window.removeEventListener('scroll', onScrollOrResize, true)
     window.removeEventListener('resize', onScrollOrResize)
-    document.removeEventListener('click', onDocumentClick)
+    document.removeEventListener('pointerdown', onDocumentPointerDown, true)
     document.removeEventListener('keydown', onKeydown)
   })
 

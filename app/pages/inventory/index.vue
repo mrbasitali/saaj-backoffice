@@ -121,11 +121,6 @@ type InventoryLocationResponse = {
  data: InventoryLocation[]
 }
 
-type ProductIndexResponse = {
- data: Product[]
- meta?: PaginationMeta
-}
-
 const { $api } = useNuxtApp()
 
 const activeTab = ref<'stock' | 'movements' | 'locations'>('stock')
@@ -164,6 +159,8 @@ const locationTypeFilter = ref('all')
 const locationActiveFilter = ref('all')
 
 const adjustmentOpen = ref(false)
+const bulkAdjustmentOpen = ref(false)
+const selectedStockIds = ref<number[]>([])
 const locationFormOpen = ref(false)
 const locationFormMode = ref<'create' | 'edit'>('create')
 const selectedLocation = ref<InventoryLocation | null>(null)
@@ -254,6 +251,11 @@ watch(movementSearch, (value) => {
 
 watch([stockLocationFilter, stockStatusFilter, stockTrackFilter, stockSortBy, stockPerPage], () => {
  stockPage.value = 1
+ selectedStockIds.value = []
+})
+
+watch([debouncedStockSearch, stockPage], () => {
+ selectedStockIds.value = []
 })
 
 watch([movementLocationFilter, movementTypeFilter, movementDateFrom, movementDateTo, movementPerPage], () => {
@@ -298,21 +300,10 @@ const {
 } = useAsyncData(
  'inventory-bootstrap',
  async () => {
- const [locationsResponse, productsResponse] = await Promise.all([
- $api<InventoryLocationResponse>('/admin/inventory-locations'),
- $api<ProductIndexResponse>('/admin/products', {
- query: {
- include_variants: 1,
- is_active: 1,
- per_page: 100,
- sort_by: 'name',
- },
- }),
- ])
+ const locationsResponse = await $api<InventoryLocationResponse>('/admin/inventory-locations')
 
  return {
  locations: locationsResponse.data ?? [],
- products: productsResponse.data ?? [],
  }
  },
  { immediate: true },
@@ -367,7 +358,6 @@ const {
 )
 
 const locations = computed(() => bootstrap.value?.locations ?? [])
-const products = computed(() => bootstrap.value?.products ?? [])
 const stocks = computed(() => stockData.value?.data ?? [])
 const stockMeta = computed(() => stockData.value?.meta)
 const movements = computed(() => movementData.value?.data ?? [])
@@ -413,6 +403,10 @@ const totalOnHand = computed(() => stocks.value.reduce((sum, stock) => sum + Num
 const totalAvailable = computed(() => stocks.value.reduce((sum, stock) => sum + Number(stock.available_quantity || 0), 0))
 const totalReserved = computed(() => stocks.value.reduce((sum, stock) => sum + Number(stock.reserved_quantity || 0), 0))
 const lowStockRows = computed(() => stocks.value.filter((stock) => stockStatus(stock) === 'low_stock' || stockStatus(stock) === 'out_of_stock').length)
+const selectedStocks = computed(() => stocks.value.filter((stock) => selectedStockIds.value.includes(stock.id)))
+const allVisibleStocksSelected = computed(() => {
+ return stocks.value.length > 0 && stocks.value.every((stock) => selectedStockIds.value.includes(stock.id))
+})
 
 const canGoPreviousStock = computed(() => stockPage.value > 1)
 const canGoNextStock = computed(() => stockMeta.value ? stockPage.value < stockMeta.value.last_page : false)
@@ -561,6 +555,33 @@ function clearLocationFilters() {
 async function afterAdjustmentSaved(message?: string) {
  adjustmentOpen.value = false
  showNotice(message || 'Inventory adjusted successfully.')
+
+ await Promise.all([
+ refreshStocks(),
+ refreshMovements(),
+ ])
+}
+
+function toggleAllVisibleStocks(event: Event) {
+ const checked = (event.target as HTMLInputElement).checked
+ selectedStockIds.value = checked ? stocks.value.map((stock) => stock.id) : []
+}
+
+function toggleStock(stockId: number, event: Event) {
+ const checked = (event.target as HTMLInputElement).checked
+
+ if (checked) {
+ selectedStockIds.value = [...new Set([...selectedStockIds.value, stockId])]
+ return
+ }
+
+ selectedStockIds.value = selectedStockIds.value.filter((id) => id !== stockId)
+}
+
+async function afterBulkAdjustmentSaved(message?: string) {
+ bulkAdjustmentOpen.value = false
+ selectedStockIds.value = []
+ showNotice(message || 'Selected inventory adjusted successfully.')
 
  await Promise.all([
  refreshStocks(),
@@ -920,11 +941,59 @@ function nextMovementPage() {
  </AppEmptyState>
 
  <template v-else>
+ <AppCard class="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+ <div>
+ <p class="text-sm font-semibold text-gray-900 dark:text-white">
+ {{ selectedStockIds.length }} selected
+ </p>
+ <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+ Select stock rows to apply one adjustment to all of them.
+ </p>
+ </div>
+
+ <div class="flex flex-wrap gap-2">
+ <AppButton
+ v-if="selectedStockIds.length"
+ variant="secondary"
+ size="sm"
+ @click="selectedStockIds = []"
+ >
+ Clear selection
+ </AppButton>
+ <AppButton
+ size="sm"
+ :disabled="!selectedStockIds.length"
+ @click="bulkAdjustmentOpen = true"
+ >
+ Adjust selected
+ </AppButton>
+ </div>
+ </AppCard>
+
  <AppCard class="hidden overflow-hidden xl:block">
  <div class="overflow-hidden">
  <table class="w-full table-fixed divide-y divide-gray-100 dark:divide-white/[0.055]">
+ <colgroup>
+ <col class="w-[4%]">
+ <col class="w-[36%]">
+ <col class="w-[18%]">
+ <col class="w-[15%]">
+ <col class="w-[9%]">
+ <col class="w-[9%]">
+ <col class="w-[9%]">
+ </colgroup>
  <thead class="bg-gray-950/[0.018] dark:bg-white/[0.025]">
  <tr>
+ <th class="px-4 py-3 text-left">
+ <input
+ type="checkbox"
+ class="h-4 w-4 cursor-pointer rounded border-gray-300 accent-gray-950 dark:border-gray-600 dark:accent-white"
+ :checked="allVisibleStocksSelected"
+ :indeterminate.prop="selectedStockIds.length > 0 && !allVisibleStocksSelected"
+ aria-label="Select all stock rows on this page"
+ @change="toggleAllVisibleStocks"
+ >
+ </th>
  <th class="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.07em] text-gray-400 dark:text-gray-600">Product</th>
  <th class="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.07em] text-gray-400 dark:text-gray-600">Location</th>
  <th class="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.07em] text-gray-400 dark:text-gray-600">Status</th>
@@ -940,6 +1009,15 @@ function nextMovementPage() {
  :key="stock.id"
  class="transition hover:bg-gray-950/[0.018] dark:hover:bg-white/[0.025]"
  >
+ <td class="px-4 py-3 align-top">
+ <input
+ type="checkbox"
+ class="mt-1 h-4 w-4 cursor-pointer rounded border-gray-300 accent-gray-950 dark:border-gray-600 dark:accent-white"
+ :checked="selectedStockIds.includes(stock.id)"
+ :aria-label="`Select ${productName(stock)}`"
+ @change="toggleStock(stock.id, $event)"
+ >
+ </td>
  <td class="min-w-0 px-4 py-3">
  <div class="flex items-center gap-3">
  <div class="h-14 w-12 shrink-0 overflow-hidden rounded-xl bg-gray-100 dark:bg-white/[0.055]">
@@ -958,14 +1036,14 @@ function nextMovementPage() {
  </div>
 
  <div class="min-w-0">
- <p class="max-w-full truncate text-sm font-semibold text-gray-950 dark:text-white">
+ <p class="break-words text-sm font-semibold leading-5 text-gray-950 dark:text-white">
  {{ productName(stock) }}
  </p>
- <p class="mt-1 truncate text-xs text-gray-500 dark:text-gray-400">
- {{ variantName(stock.variant) }} · {{ variantSku(stock.variant) }}
+ <p class="mt-1 break-all font-mono text-[11px] text-gray-500 dark:text-gray-400">
+ {{ variantSku(stock.variant) }}
  </p>
- <p class="mt-1 truncate text-xs text-gray-400 dark:text-gray-500">
- {{ productBrand(stock) }}
+ <p class="mt-1 break-words text-xs text-gray-400 dark:text-gray-500">
+ {{ variantName(stock.variant) }} · {{ productBrand(stock) }}
  </p>
  </div>
  </div>
@@ -1018,7 +1096,14 @@ function nextMovementPage() {
  <AppCard
  v-for="stock in stocks"
  :key="stock.id"
- class="p-4"
+ class="relative p-4"
+ >
+ <input
+ type="checkbox"
+ class="absolute right-4 top-4 h-4 w-4 cursor-pointer rounded border-gray-300 accent-gray-950 dark:border-gray-600 dark:accent-white"
+ :checked="selectedStockIds.includes(stock.id)"
+ :aria-label="`Select ${productName(stock)}`"
+ @change="toggleStock(stock.id, $event)"
  >
  <div class="flex gap-3">
  <div class="h-20 w-16 shrink-0 overflow-hidden rounded-[14px] bg-gray-950/[0.04] dark:bg-white/[0.055]">
@@ -1036,11 +1121,14 @@ function nextMovementPage() {
  </span>
  </div>
 
- <div class="min-w-0 flex-1">
- <p class="truncate text-sm font-semibold text-gray-950 dark:text-white">
+ <div class="min-w-0 flex-1 pr-7">
+ <p class="break-words text-sm font-semibold leading-5 text-gray-950 dark:text-white">
  {{ productName(stock) }}
  </p>
- <p class="mt-1 truncate text-xs text-gray-500 dark:text-gray-400">
+ <p class="mt-1 break-all font-mono text-[11px] text-gray-500 dark:text-gray-400">
+ {{ variantSku(stock.variant) }}
+ </p>
+ <p class="mt-1 break-words text-xs text-gray-500 dark:text-gray-400">
  {{ variantName(stock.variant) }}
  </p>
  <div class="mt-3 flex flex-wrap gap-2">
@@ -1110,6 +1198,14 @@ function nextMovementPage() {
  <AppCard class="hidden overflow-hidden xl:block">
  <div class="overflow-hidden">
  <table class="w-full table-fixed divide-y divide-gray-100 dark:divide-white/[0.055]">
+ <colgroup>
+ <col class="w-[18%]">
+ <col class="w-[34%]">
+ <col class="w-[18%]">
+ <col class="w-[10%]">
+ <col class="w-[10%]">
+ <col class="w-[10%]">
+ </colgroup>
  <thead class="bg-gray-950/[0.018] dark:bg-white/[0.025]">
  <tr>
  <th class="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.07em] text-gray-400 dark:text-gray-600">Movement</th>
@@ -1143,11 +1239,14 @@ function nextMovementPage() {
  </td>
 
  <td class="min-w-0 px-4 py-3">
- <p class="max-w-full truncate text-sm font-semibold text-gray-950 dark:text-white">
+ <p class="break-words text-sm font-semibold leading-5 text-gray-950 dark:text-white">
  {{ productName(movement) }}
  </p>
- <p class="mt-1 truncate text-xs text-gray-500 dark:text-gray-400">
- {{ variantName(movement.variant) }} · {{ variantSku(movement.variant) }}
+ <p class="mt-1 break-all font-mono text-[11px] text-gray-500 dark:text-gray-400">
+ {{ variantSku(movement.variant) }}
+ </p>
+ <p class="mt-1 break-words text-xs text-gray-500 dark:text-gray-400">
+ {{ variantName(movement.variant) }}
  </p>
  <p
  v-if="movement.note"
@@ -1197,10 +1296,13 @@ function nextMovementPage() {
  <AppBadge :variant="movementBadgeVariant(movement)">
  {{ movementTypeLabel(movement.type) }}
  </AppBadge>
- <p class="mt-3 truncate text-sm font-semibold text-gray-950 dark:text-white">
+ <p class="mt-3 break-words text-sm font-semibold leading-5 text-gray-950 dark:text-white">
  {{ productName(movement) }}
  </p>
- <p class="mt-1 truncate text-xs text-gray-500 dark:text-gray-400">
+ <p class="mt-1 break-all font-mono text-[11px] text-gray-500 dark:text-gray-400">
+ {{ variantSku(movement.variant) }}
+ </p>
+ <p class="mt-1 break-words text-xs text-gray-500 dark:text-gray-400">
  {{ variantName(movement.variant) }} · {{ movement.location?.code }}
  </p>
  </div>
@@ -1366,10 +1468,16 @@ function nextMovementPage() {
 
  <InventoryAdjustmentModal
  :open="adjustmentOpen"
- :products="products"
  :locations="locations"
  @close="adjustmentOpen = false"
  @saved="afterAdjustmentSaved"
+ />
+
+ <BulkInventoryAdjustmentModal
+ :open="bulkAdjustmentOpen"
+ :stocks="selectedStocks"
+ @close="bulkAdjustmentOpen = false"
+ @saved="afterBulkAdjustmentSaved"
  />
 
  <InventoryLocationModal

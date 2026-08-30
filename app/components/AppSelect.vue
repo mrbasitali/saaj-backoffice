@@ -834,7 +834,9 @@ onBeforeUnmount(() => {
  <span
  class="
  block
- truncate
+ whitespace-normal
+ break-words
+ leading-5
 
  text-[13px]
  font-medium
@@ -851,7 +853,8 @@ onBeforeUnmount(() => {
  class="
  mt-0.5
  block
- truncate
+ whitespace-normal
+ break-all
 
  text-[11px]
  text-gray-400
