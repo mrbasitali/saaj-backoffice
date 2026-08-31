@@ -284,8 +284,26 @@ const productSectionsSaving = ref(false)
 const productSectionsSaved = ref(false)
 const productSectionsError = ref('')
 const productSearchTimers: Partial<Record<1 | 2, ReturnType<typeof setTimeout>>> = {}
+const productPickerElements: Partial<Record<1 | 2, HTMLElement>> = {}
 const productLimitOptions = [4, 6, 8, 10, 12].map(value => ({ label: `${value} products`, value }))
 const categoryColumnOptions = [2, 3, 4, 5, 6].map(value => ({ label: `${value} cards`, value }))
+
+function registerProductPicker(slot: 1 | 2, element: any) {
+  if (element instanceof HTMLElement) productPickerElements[slot] = element
+  else delete productPickerElements[slot]
+}
+
+function closeProductPickersOnOutsidePointer(event: PointerEvent) {
+  const target = event.target
+  if (!(target instanceof Node)) return
+
+  ;([1, 2] as const).forEach((slot) => {
+    const picker = productPickerElements[slot]
+    if (productPickerOpen[slot] && picker && !picker.contains(target)) productPickerOpen[slot] = false
+  })
+}
+
+onMounted(() => document.addEventListener('pointerdown', closeProductPickersOnOutsidePointer))
 
 function productImage(product: HomepageProduct) {
   return product.primary_image?.optimized_urls?.card ?? product.primary_image?.image_url ?? null
@@ -675,6 +693,7 @@ function clearEditorPreviews() {
 }
 
 onBeforeUnmount(() => {
+  document.removeEventListener('pointerdown', closeProductPickersOnOutsidePointer)
   clearEditorPreviews()
   revokePreview(editorialImagePreview.value)
   if (productSearchTimers[1]) clearTimeout(productSearchTimers[1])
@@ -979,7 +998,8 @@ function shortMediaLabel(slide: HeroSlide) {
     </div>
 
     <div v-else class="mt-6 space-y-6">
-      <AppCard class="p-5 sm:p-6">
+      <template v-for="adminBlock in ['flow', 'hero', 'slides', 'categories']" :key="adminBlock">
+      <AppCard v-if="adminBlock === 'hero'" class="p-5 sm:p-6">
         <div class="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
           <div class="max-w-2xl">
             <div class="flex items-center gap-2">
@@ -1062,7 +1082,7 @@ function shortMediaLabel(slide: HeroSlide) {
         </div>
       </AppCard>
 
-      <AppCard v-if="categorySection" class="overflow-hidden">
+      <AppCard v-if="adminBlock === 'categories' && categorySection" class="overflow-hidden">
         <div class="flex flex-col gap-4 px-5 py-5 sm:flex-row sm:items-end sm:justify-between sm:px-6">
           <div class="max-w-2xl">
             <div class="flex items-center gap-2">
@@ -1189,7 +1209,7 @@ function shortMediaLabel(slide: HeroSlide) {
         </div>
       </AppCard>
 
-      <AppCard class="overflow-hidden">
+      <AppCard v-if="adminBlock === 'flow'" class="overflow-hidden">
         <div class="flex flex-col gap-4 px-5 py-5 sm:flex-row sm:items-end sm:justify-between sm:px-6">
           <div class="max-w-2xl">
             <div class="flex items-center gap-2">
@@ -1279,7 +1299,7 @@ function shortMediaLabel(slide: HeroSlide) {
         </div>
       </AppCard>
 
-      <AppCard class="overflow-hidden">
+      <AppCard v-if="adminBlock === 'slides'" class="overflow-hidden">
         <div class="flex items-center justify-between gap-4 px-5 py-5 sm:px-6">
           <div>
             <p class="text-sm font-semibold text-gray-950 dark:text-white">Hero slides</p>
@@ -1357,6 +1377,7 @@ function shortMediaLabel(slide: HeroSlide) {
           </article>
         </div>
       </AppCard>
+      </template>
 
       <AppCard class="overflow-hidden">
         <div class="flex flex-col gap-4 px-5 py-5 sm:flex-row sm:items-end sm:justify-between sm:px-6">
@@ -1437,7 +1458,7 @@ function shortMediaLabel(slide: HeroSlide) {
                 </span>
               </div>
 
-              <div class="relative mt-3">
+              <div :ref="element => registerProductPicker(section.slot, element)" class="relative mt-3">
                 <input
                   v-model="productSearch[section.slot]"
                   type="search"
