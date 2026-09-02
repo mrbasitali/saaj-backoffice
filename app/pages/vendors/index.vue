@@ -52,6 +52,7 @@ type VendorResponse = {
 }
 
 const { $api } = useNuxtApp()
+const { formatDate: formatAppDate } = useAppDateTime()
 
 const search = ref('')
 const debouncedSearch = ref('')
@@ -235,13 +236,7 @@ function formatAmount(value: string | number | null | undefined) {
 }
 
 function dateLabel(value: string | null | undefined) {
- if (!value) return 'Not set'
-
- return new Intl.DateTimeFormat('en', {
- year: 'numeric',
- month: 'short',
- day: '2-digit',
- }).format(new Date(value))
+ return formatAppDate(value)
 }
 
 function balanceVariant(vendor: Vendor): 'green' | 'amber' | 'neutral' {

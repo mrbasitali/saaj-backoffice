@@ -114,6 +114,8 @@ const approveOpen = ref(false)
 const approving = ref(false)
 const approveError = ref('')
 const returnToApprove = ref<PurchaseReturn | null>(null)
+const approvedAtInput = ref('')
+const { formatDate: formatAppDate, formatDateTime: formatAppDateTime, toDateTimeInput, dateTimeInputToIso, timezoneLabel } = useAppDateTime()
 
 const deleteOpen = ref(false)
 const deleting = ref(false)
@@ -331,13 +333,11 @@ function money(value: string | number | null | undefined) {
 }
 
 function dateLabel(value: string | null | undefined) {
- if (!value) return 'Not set'
+ return formatAppDate(value)
+}
 
- return new Intl.DateTimeFormat('en', {
- year: 'numeric',
- month: 'short',
- day: '2-digit',
- }).format(new Date(value))
+function dateTimeLabel(value: string | null | undefined) {
+ return formatAppDateTime(value)
 }
 
 function statusVariant(status: string): 'neutral' | 'green' | 'red' | 'amber' | 'blue' {
@@ -408,6 +408,7 @@ async function afterSaved(purchaseReturn: PurchaseReturn, message?: string) {
 
 function askApprove(purchaseReturn: PurchaseReturn) {
  returnToApprove.value = purchaseReturn
+ approvedAtInput.value = toDateTimeInput()
  approveError.value = ''
  approveOpen.value = true
 }
@@ -418,11 +419,18 @@ async function confirmApprove() {
  approving.value = true
  approveError.value = ''
 
+ const approvedAt = dateTimeInputToIso(approvedAtInput.value)
+ if (!approvedAt) {
+ approveError.value = 'Choose a valid approval date and time.'
+ approving.value = false
+ return
+ }
+
  try {
  const response = await $api<PurchaseReturnResponse>(`/admin/purchase-returns/${returnToApprove.value.id}/approve`, {
  method: 'POST',
  body: {
- approved_at: new Date().toISOString(),
+ approved_at: approvedAt,
  refunded_amount: Number(returnToApprove.value.refunded_amount || 0),
  note: `Purchase return approved: ${returnToApprove.value.return_number}`,
  },
@@ -863,7 +871,7 @@ function nextPage() {
  v-if="purchaseReturn.approved_at"
  class="mt-2 text-xs text-gray-500 dark:text-gray-400"
  >
- Approved {{ dateLabel(purchaseReturn.approved_at) }}
+ Approved {{ dateTimeLabel(purchaseReturn.approved_at) }}
  </p>
  </td>
 
@@ -1037,7 +1045,12 @@ function nextPage() {
  :error="approveError"
  @close="approveOpen = false"
  @confirm="confirmApprove"
- />
+ >
+  <div class="rounded-[12px] bg-gray-950/[0.025] p-4 dark:bg-white/[0.035]">
+   <AppInput v-model="approvedAtInput" type="datetime-local" label="Return approval date & time" />
+   <p class="mt-2 text-[11px] leading-5 text-gray-400 dark:text-gray-500">Shown in {{ timezoneLabel }}. Adjust it for a return processed earlier.</p>
+  </div>
+ </AppConfirmModal>
 
  <AppConfirmModal
  :open="deleteOpen"

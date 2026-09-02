@@ -97,6 +97,8 @@ const payOpen = ref(false)
 const paying = ref(false)
 const payError = ref('')
 const paymentToPay = ref<VendorPayment | null>(null)
+const paidAtInput = ref('')
+const { formatDate: formatAppDate, formatDateTime: formatAppDateTime, toDateTimeInput, dateTimeInputToIso, timezoneLabel } = useAppDateTime()
 
 const deleteOpen = ref(false)
 const deleting = ref(false)
@@ -307,13 +309,11 @@ function money(value: string | number | null | undefined) {
 }
 
 function dateLabel(value: string | null | undefined) {
- if (!value) return 'Not set'
+ return formatAppDate(value)
+}
 
- return new Intl.DateTimeFormat('en', {
- year: 'numeric',
- month: 'short',
- day: '2-digit',
- }).format(new Date(value))
+function dateTimeLabel(value: string | null | undefined) {
+ return formatAppDateTime(value)
 }
 
 function statusVariant(status: string): 'neutral' | 'green' | 'red' | 'amber' | 'blue' {
@@ -386,6 +386,7 @@ async function afterSaved(payment: VendorPayment, message?: string) {
 
 function askPay(payment: VendorPayment) {
  paymentToPay.value = payment
+ paidAtInput.value = toDateTimeInput()
  payError.value = ''
  payOpen.value = true
 }
@@ -396,11 +397,18 @@ async function confirmPay() {
  paying.value = true
  payError.value = ''
 
+ const paidAt = dateTimeInputToIso(paidAtInput.value)
+ if (!paidAt) {
+ payError.value = 'Choose a valid payment date and time.'
+ paying.value = false
+ return
+ }
+
  try {
  const response = await $api<VendorPaymentResponse>(`/admin/vendor-payments/${paymentToPay.value.id}/pay`, {
  method: 'POST',
  body: {
- paid_at: new Date().toISOString(),
+ paid_at: paidAt,
  },
  })
 
@@ -822,7 +830,7 @@ function nextPage() {
  v-if="payment.paid_at"
  class="mt-2 text-xs text-gray-500 dark:text-gray-400"
  >
- Paid {{ dateLabel(payment.paid_at) }}
+ Paid {{ dateTimeLabel(payment.paid_at) }}
  </p>
  </td>
 
@@ -995,7 +1003,12 @@ function nextPage() {
  :error="payError"
  @close="payOpen = false"
  @confirm="confirmPay"
- />
+ >
+  <div class="rounded-[12px] bg-gray-950/[0.025] p-4 dark:bg-white/[0.035]">
+   <AppInput v-model="paidAtInput" type="datetime-local" label="Payment date & time" />
+   <p class="mt-2 text-[11px] leading-5 text-gray-400 dark:text-gray-500">Shown in {{ timezoneLabel }}. Adjust it when recording a payment later.</p>
+  </div>
+ </AppConfirmModal>
 
  <AppConfirmModal
  :open="deleteOpen"

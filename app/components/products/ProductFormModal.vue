@@ -125,6 +125,7 @@ const emit = defineEmits<{
 }>()
 
 const { $api } = useNuxtApp()
+const { toDateTimeInput, dateTimeInputToIso, timezoneLabel } = useAppDateTime()
 
 const activeSection =
  ref<ProductSection>('details')
@@ -358,28 +359,7 @@ function toDatetimeLocal(
  return ''
  }
 
- const date = new Date(value)
-
- if (Number.isNaN(date.getTime())) {
- return value
- .replace(' ', 'T')
- .slice(0, 16)
- }
-
- const pad = (part: number) =>
- String(part).padStart(2, '0')
-
- return [
- date.getFullYear(),
- '-',
- pad(date.getMonth() + 1),
- '-',
- pad(date.getDate()),
- 'T',
- pad(date.getHours()),
- ':',
- pad(date.getMinutes()),
- ].join('')
+ return toDateTimeInput(value)
 }
 
 function publishAtPayload() {
@@ -387,11 +367,7 @@ function publishAtPayload() {
  return null
  }
 
- const date = new Date(form.published_at)
-
- return Number.isNaN(date.getTime())
- ? form.published_at
- : date.toISOString()
+ return dateTimeInputToIso(form.published_at) ?? form.published_at
 }
 
 function resetForm() {
@@ -1588,6 +1564,10 @@ async function previewStorefront() {
  .published_at
  "
  />
+
+ <p class="mt-1.5 text-[11px] leading-5 text-gray-400 dark:text-gray-500">
+  Publish time is interpreted in {{ timezoneLabel }}.
+ </p>
 
  <div
  class="

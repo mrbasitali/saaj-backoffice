@@ -100,6 +100,8 @@ const receiveOpen = ref(false)
 const receiving = ref(false)
 const receiveError = ref('')
 const paymentToReceive = ref<CustomerPayment | null>(null)
+const receivedAtInput = ref('')
+const { formatDate: formatAppDate, formatDateTime: formatAppDateTime, toDateTimeInput, dateTimeInputToIso, timezoneLabel } = useAppDateTime()
 
 const deleteOpen = ref(false)
 const deleting = ref(false)
@@ -316,13 +318,11 @@ function money(value: string | number | null | undefined) {
 }
 
 function dateLabel(value: string | null | undefined) {
- if (!value) return 'Not set'
+ return formatAppDate(value)
+}
 
- return new Intl.DateTimeFormat('en', {
- year: 'numeric',
- month: 'short',
- day: '2-digit',
- }).format(new Date(value))
+function dateTimeLabel(value: string | null | undefined) {
+ return formatAppDateTime(value)
 }
 
 function statusVariant(status: string): 'neutral' | 'green' | 'red' | 'amber' | 'blue' {
@@ -409,6 +409,7 @@ async function afterSaved(payment: CustomerPayment, message?: string) {
 
 function askReceive(payment: CustomerPayment) {
  paymentToReceive.value = payment
+ receivedAtInput.value = toDateTimeInput()
  receiveError.value = ''
  receiveOpen.value = true
 }
@@ -419,11 +420,18 @@ async function confirmReceive() {
  receiving.value = true
  receiveError.value = ''
 
+ const receivedAt = dateTimeInputToIso(receivedAtInput.value)
+ if (!receivedAt) {
+ receiveError.value = 'Choose a valid payment receipt date and time.'
+ receiving.value = false
+ return
+ }
+
  try {
  const response = await $api<CustomerPaymentResponse>(`/admin/customer-payments/${paymentToReceive.value.id}/receive`, {
  method: 'POST',
  body: {
- received_at: new Date().toISOString(),
+ received_at: receivedAt,
  },
  })
 
@@ -899,7 +907,7 @@ function nextPage() {
  v-if="payment.received_at"
  class="mt-2 text-xs text-gray-500 dark:text-gray-400"
  >
- Received {{ dateLabel(payment.received_at) }}
+ Received {{ dateTimeLabel(payment.received_at) }}
  </p>
  </td>
 
@@ -1094,7 +1102,12 @@ function nextPage() {
  :error="receiveError"
  @close="receiveOpen = false"
  @confirm="confirmReceive"
- />
+ >
+  <div class="rounded-[12px] bg-gray-950/[0.025] p-4 dark:bg-white/[0.035]">
+   <AppInput v-model="receivedAtInput" type="datetime-local" label="Payment received date & time" />
+   <p class="mt-2 text-[11px] leading-5 text-gray-400 dark:text-gray-500">Shown in {{ timezoneLabel }}. Adjust it for a payment recorded later.</p>
+  </div>
+ </AppConfirmModal>
 
  <AppConfirmModal
  :open="deleteOpen"

@@ -1,8 +1,18 @@
 <script setup lang="ts">
 const auth = useAuthStore()
 const { $api } = useNuxtApp()
+const { timezone } = useAppDateTime()
 const unreadOnlineOrders = useState<number>('admin-unread-online-orders', () => 0)
 let unreadTimer: ReturnType<typeof setInterval> | null = null
+
+const { data: globalSiteSettings } = await useAsyncData('admin-global-site-settings', () =>
+ $api<{ data: { timezone?: string | null } }>('/admin/site-settings'),
+)
+
+watchEffect(() => {
+ const configuredTimezone = globalSiteSettings.value?.data.timezone
+ if (configuredTimezone) timezone.value = configuredTimezone
+})
 
 async function refreshUnreadOnlineOrders() {
   try {

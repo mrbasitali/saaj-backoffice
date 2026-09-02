@@ -99,6 +99,7 @@ type CategoriesTreeResponse = {
 }
 
 const { $api } = useNuxtApp()
+const { formatDateTime: formatAppDateTime } = useAppDateTime()
 
 const search = ref('')
 const debouncedSearch = ref('')
@@ -405,13 +406,7 @@ function secondaryCategoryCount(product: Product) {
 }
 
 function dateLabel(value: string | null | undefined) {
- if (!value) return 'Not set'
-
- return new Intl.DateTimeFormat('en', {
- year: 'numeric',
- month: 'short',
- day: '2-digit',
- }).format(new Date(value))
+ return formatAppDateTime(value)
 }
 
 function publishBadgeVariant(product: Product): 'neutral' | 'green' | 'amber' {

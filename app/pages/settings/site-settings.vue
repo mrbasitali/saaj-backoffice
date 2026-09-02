@@ -19,6 +19,7 @@ type Settings = {
   contact_address: string | null
   bank_details: string | null
   currency: string | null
+  timezone: string
   show_sold_out_products: boolean
   stacked_product_gallery_enabled: boolean
   editorial_gallery_padding_enabled: boolean
@@ -58,6 +59,7 @@ const form = reactive<Settings>({
   contact_address: null,
   bank_details: null,
   currency: 'PKR',
+  timezone: 'Asia/Karachi',
   show_sold_out_products: true,
   stacked_product_gallery_enabled: false,
   editorial_gallery_padding_enabled: true,
@@ -129,6 +131,36 @@ const saving = ref(false)
 const formError = ref('')
 const success = ref(false)
 const adminNotificationEmail = ref('')
+const { timezone: activeTimezone } = useAppDateTime()
+
+const timezoneOptions = computed(() => {
+  const detected = typeof (Intl as any).supportedValuesOf === 'function'
+    ? (Intl as any).supportedValuesOf('timeZone') as string[]
+    : ['Asia/Karachi', 'Asia/Dubai', 'UTC', 'Europe/London', 'America/New_York']
+  const supported = Array.from(new Set([...detected, 'UTC', form.timezone].filter(Boolean))).sort()
+
+  return supported.map((value) => {
+    const offset = new Intl.DateTimeFormat('en', {
+      timeZone: value,
+      timeZoneName: 'shortOffset',
+    }).formatToParts(new Date()).find(part => part.type === 'timeZoneName')?.value
+
+    return {
+      label: `${value.replaceAll('_', ' ')}${offset ? ` · ${offset}` : ''}`,
+      value,
+    }
+  })
+})
+
+const timezonePreview = computed(() => new Intl.DateTimeFormat('en-PK', {
+  day: '2-digit',
+  month: 'short',
+  year: 'numeric',
+  hour: 'numeric',
+  minute: '2-digit',
+  timeZone: form.timezone || 'Asia/Karachi',
+  timeZoneName: 'short',
+}).format(new Date()))
 
 function addAdminNotificationEmail() {
   const email = adminNotificationEmail.value.trim().toLowerCase()
@@ -184,6 +216,7 @@ function buildFormData() {
     'invoice_contact_details',
     'bank_details',
     'currency',
+    'timezone',
   ]
 
   for (const field of textFields) {
@@ -218,10 +251,12 @@ async function submit() {
   success.value = false
 
   try {
-    await $api('/admin/site-settings', {
+    const response = await $api<{ data: Settings }>('/admin/site-settings', {
       method: 'POST',
       body: buildFormData(),
     })
+
+    activeTimezone.value = response.data.timezone
 
     for (const key of Object.keys(logoFiles)) {
       revokeLogoPreview(key)
@@ -479,6 +514,33 @@ const socialConfig = [
               placeholder="Bank name, account title, IBAN, payment instructions…"
             />
           </div>
+        </div>
+      </AppCard>
+
+      <AppCard class="p-5 sm:p-6">
+        <div class="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
+          <div class="max-w-2xl">
+            <p class="text-sm font-semibold text-gray-950 dark:text-white">Business timezone</p>
+            <p class="mt-1 text-[13px] leading-5 text-gray-400 dark:text-gray-500">
+              Controls sale completion, stock receipt, payment receipt, reports, invoices, and every displayed app timestamp. Stored records remain safely normalized in UTC.
+            </p>
+          </div>
+          <span class="shrink-0 rounded-full bg-violet-500/[0.09] px-3 py-1.5 text-[11px] font-medium text-violet-700 dark:bg-violet-500/10 dark:text-violet-300">
+            {{ timezonePreview }}
+          </span>
+        </div>
+
+        <div class="mt-5 max-w-xl">
+          <AppSelect
+            v-model="form.timezone"
+            label="Application timezone"
+            :options="timezoneOptions"
+            searchable
+            placeholder="Search city or timezone…"
+          />
+          <p class="mt-2 text-[11px] leading-5 text-gray-400 dark:text-gray-500">
+            Pakistan uses Asia/Karachi. Changing this updates presentation and future defaults; it does not rewrite historical UTC records.
+          </p>
         </div>
       </AppCard>
 

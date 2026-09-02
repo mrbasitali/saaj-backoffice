@@ -53,11 +53,13 @@ const emit = defineEmits<{
 }>()
 
 const { $api } = useNuxtApp()
+const { todayDateInput, toDateTimeInput, dateTimeInputToIso, timezoneLabel } = useAppDateTime()
 
 const saving = ref(false)
 const saveMode = ref<'draft' | 'paid'>('draft')
 const formError = ref('')
 const fieldErrors = ref<Record<string, string>>({})
+const paidAtInput = ref(toDateTimeInput())
 
 const form = reactive({
  vendor_id: null as number | null,
@@ -192,7 +194,7 @@ watch(
 )
 
 function todayDate() {
- return new Date().toISOString().slice(0, 10)
+ return todayDateInput()
 }
 
 function resetForm() {
@@ -209,6 +211,7 @@ function resetForm() {
  form.amount = maxPayable.value
  form.reference_number = ''
  form.notes = ''
+ paidAtInput.value = toDateTimeInput()
  saveMode.value = 'draft'
 }
 
@@ -257,6 +260,13 @@ async function submit(mode: 'draft' | 'paid') {
  formError.value = ''
  fieldErrors.value = {}
 
+ const paidAt = mode === 'paid' ? dateTimeInputToIso(paidAtInput.value) : null
+ if (mode === 'paid' && !paidAt) {
+ formError.value = 'Choose a valid payment date and time.'
+ saving.value = false
+ return
+ }
+
  try {
  const created = await $api<VendorPaymentResponse>('/admin/vendor-payments', {
  method: 'POST',
@@ -267,7 +277,7 @@ async function submit(mode: 'draft' | 'paid') {
  const paid = await $api<VendorPaymentResponse>(`/admin/vendor-payments/${created.data.id}/pay`, {
  method: 'POST',
  body: {
- paid_at: new Date().toISOString(),
+ paid_at: paidAt!,
  },
  })
 
@@ -359,6 +369,11 @@ async function submit(mode: 'draft' | 'paid') {
  type="date"
  :error="fieldErrors.payment_date"
  />
+
+ <div>
+  <AppInput v-model="paidAtInput" label="Paid date & time" type="datetime-local" />
+  <p class="mt-1.5 text-[11px] leading-5 text-gray-400 dark:text-gray-500">Used when you choose Create & pay now · {{ timezoneLabel }}</p>
+ </div>
 
  <AppSelect
  v-model="form.payment_method"

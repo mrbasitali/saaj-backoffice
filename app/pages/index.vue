@@ -5,10 +5,11 @@ definePageMeta({
 })
 
 const { $api } = useNuxtApp()
+const { todayDateInput, startOfMonthInput } = useAppDateTime()
 
 const selectedPeriod = ref('month')
-const customDateFrom = ref(new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10))
-const customDateTo = ref(new Date().toISOString().slice(0, 10))
+const customDateFrom = ref(startOfMonthInput())
+const customDateTo = ref(todayDateInput())
 
 const periodOptions = [
  {

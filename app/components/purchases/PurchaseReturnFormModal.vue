@@ -109,6 +109,7 @@ const emit = defineEmits<{
 }>()
 
 const { $api } = useNuxtApp()
+const { todayDateInput } = useAppDateTime()
 
 const saving = ref(false)
 const fetchingInvoice = ref(false)
@@ -194,7 +195,7 @@ watch(
 )
 
 function todayDate() {
- return new Date().toISOString().slice(0, 10)
+ return todayDateInput()
 }
 
 function resetForm() {

@@ -26,6 +26,10 @@ const emit = defineEmits<{
  max-width="max-w-[520px]"
  @close="emit('close')"
  >
+ <div v-if="$slots.default" class="px-4 pt-4">
+  <slot />
+ </div>
+
  <div
  v-if="error"
  class="mx-4 my-4 rounded-[10px] bg-red-500/[0.07] px-3 py-2.5 text-[12px] font-medium text-red-600 dark:bg-red-500/10 dark:text-red-400"

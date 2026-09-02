@@ -94,6 +94,7 @@ const emit = defineEmits<{
 }>()
 
 const { $api } = useNuxtApp()
+const { todayDateInput } = useAppDateTime()
 
 const saving = ref(false)
 const formError = ref('')
@@ -269,7 +270,7 @@ watch(
 )
 
 function todayDate() {
- return new Date().toISOString().slice(0, 10)
+ return todayDateInput()
 }
 
 let uidCounter = 0

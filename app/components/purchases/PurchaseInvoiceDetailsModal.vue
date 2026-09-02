@@ -75,6 +75,8 @@ const emit = defineEmits<{
  printPdf: [invoice: PurchaseInvoice]
 }>()
 
+const { formatDate: formatAppDate, formatDateTime: formatAppDateTime } = useAppDateTime()
+
 function money(value: string | number | null | undefined) {
  return Number(value || 0).toLocaleString('en', {
  minimumFractionDigits: 2,
@@ -83,13 +85,11 @@ function money(value: string | number | null | undefined) {
 }
 
 function dateLabel(value: string | null | undefined) {
- if (!value) return 'Not set'
+ return formatAppDate(value)
+}
 
- return new Intl.DateTimeFormat('en', {
- year: 'numeric',
- month: 'short',
- day: '2-digit',
- }).format(new Date(value))
+function dateTimeLabel(value: string | null | undefined) {
+ return formatAppDateTime(value)
 }
 
 function label(value: string | null | undefined) {
@@ -189,7 +189,7 @@ function itemDiscountTotal(invoice: PurchaseInvoice) {
  </p>
 
  <p class="mt-2 text-sm font-semibold text-gray-950 dark:text-white">
- {{ dateLabel(invoice.received_at) }}
+ {{ dateTimeLabel(invoice.received_at) }}
  </p>
 
  <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">

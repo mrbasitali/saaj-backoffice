@@ -149,6 +149,8 @@ const receiveOpen = ref(false)
 const receiving = ref(false)
 const receiveError = ref('')
 const invoiceToReceive = ref<PurchaseInvoice | null>(null)
+const receivedAtInput = ref('')
+const { formatDate: formatAppDate, formatDateTime: formatAppDateTime, toDateTimeInput, dateTimeInputToIso, timezoneLabel } = useAppDateTime()
 
 const deleteOpen = ref(false)
 const deleting = ref(false)
@@ -408,13 +410,11 @@ function money(value: string | number | null | undefined) {
 }
 
 function dateLabel(value: string | null | undefined) {
- if (!value) return 'Not set'
+ return formatAppDate(value)
+}
 
- return new Intl.DateTimeFormat('en', {
- year: 'numeric',
- month: 'short',
- day: '2-digit',
- }).format(new Date(value))
+function dateTimeLabel(value: string | null | undefined) {
+ return formatAppDateTime(value)
 }
 
 function statusVariant(status: string): 'neutral' | 'green' | 'red' | 'amber' | 'blue' {
@@ -567,6 +567,7 @@ async function afterSaved(invoice: PurchaseInvoice, message?: string) {
 
 function askReceive(invoice: PurchaseInvoice) {
  invoiceToReceive.value = invoice
+ receivedAtInput.value = toDateTimeInput()
  receiveError.value = ''
  receiveOpen.value = true
 }
@@ -577,11 +578,18 @@ async function confirmReceive() {
  receiving.value = true
  receiveError.value = ''
 
+ const receivedAt = dateTimeInputToIso(receivedAtInput.value)
+ if (!receivedAt) {
+ receiveError.value = 'Choose a valid stock receipt date and time.'
+ receiving.value = false
+ return
+ }
+
  try {
  const response = await $api<PurchaseInvoiceResponse>(`/admin/purchase-invoices/${invoiceToReceive.value.id}/receive`, {
  method: 'POST',
  body: {
- received_at: new Date().toISOString(),
+ received_at: receivedAt,
  note: `Stock received from ${invoiceToReceive.value.invoice_number}`,
  },
  })
@@ -1076,6 +1084,13 @@ function nextPage() {
  <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
  {{ invoice.items_count ?? 0 }} lines · {{ invoice.items_sum_quantity ?? 0 }} units
  </p>
+
+ <p
+ v-if="invoice.received_at"
+ class="mt-1 text-xs text-gray-500 dark:text-gray-400"
+ >
+ Received {{ dateTimeLabel(invoice.received_at) }}
+ </p>
  </td>
 
  <td class="px-4 py-3">
@@ -1260,6 +1275,10 @@ function nextPage() {
  </p>
  </div>
 
+ <p v-if="invoice.received_at" class="mt-3 text-xs text-gray-500 dark:text-gray-400">
+  Received {{ dateTimeLabel(invoice.received_at) }}
+ </p>
+
  <div
  v-if="invoice.status === 'draft'"
  class="mt-4 grid grid-cols-3 gap-2"
@@ -1415,7 +1434,12 @@ function nextPage() {
  :error="receiveError"
  @close="receiveOpen = false"
  @confirm="confirmReceive"
- />
+ >
+  <div class="rounded-[12px] bg-gray-950/[0.025] p-4 dark:bg-white/[0.035]">
+   <AppInput v-model="receivedAtInput" type="datetime-local" label="Stock received date & time" />
+   <p class="mt-2 text-[11px] leading-5 text-gray-400 dark:text-gray-500">Shown in {{ timezoneLabel }}. Adjust it if stock was physically received earlier.</p>
+  </div>
+ </AppConfirmModal>
 
  <AppConfirmModal
  :open="deleteOpen"

@@ -39,6 +39,7 @@ type Expense = {
   amount: string | number
   payment_method: string
   status: string
+  paid_at: string | null
   reference_number: string | null
   receipt_url: string | null
   notes: string | null
@@ -63,6 +64,7 @@ type VendorIndexResponse = { data: Vendor[] }
 type LocationIndexResponse = { data: InventoryLocation[] }
 
 const { $api } = useNuxtApp()
+const { formatDate: formatAppDate, formatDateTime: formatAppDateTime, toDateTimeInput, dateTimeInputToIso, timezoneLabel } = useAppDateTime()
 
 const search = ref('')
 const debouncedSearch = ref('')
@@ -89,6 +91,10 @@ const cancelError = ref('')
 const expenseToCancel = ref<Expense | null>(null)
 
 const markingPaidId = ref<number | null>(null)
+const markPaidOpen = ref(false)
+const markPaidError = ref('')
+const expenseToMarkPaid = ref<Expense | null>(null)
+const paidAtInput = ref('')
 
 const notice = ref('')
 const noticeTimer = ref<ReturnType<typeof setTimeout> | null>(null)
@@ -225,13 +231,11 @@ function money(value: string | number | null | undefined) {
 }
 
 function dateLabel(value: string | null | undefined) {
-  if (!value) return 'Not set'
+  return formatAppDate(value)
+}
 
-  return new Intl.DateTimeFormat('en', {
-    year: 'numeric',
-    month: 'short',
-    day: '2-digit',
-  }).format(new Date(value))
+function dateTimeLabel(value: string | null | undefined) {
+  return formatAppDateTime(value)
 }
 
 function label(value: string) {
@@ -278,17 +282,35 @@ async function afterSaved() {
   showNotice(formMode.value === 'create' ? 'Expense recorded successfully.' : 'Expense updated successfully.')
 }
 
-async function markPaid(expense: Expense) {
-  if (markingPaidId.value) return
+function askMarkPaid(expense: Expense) {
+  expenseToMarkPaid.value = expense
+  paidAtInput.value = toDateTimeInput()
+  markPaidError.value = ''
+  markPaidOpen.value = true
+}
+
+async function confirmMarkPaid() {
+  const expense = expenseToMarkPaid.value
+  if (!expense || markingPaidId.value) return
+
+  const paidAt = dateTimeInputToIso(paidAtInput.value)
+  if (!paidAt) {
+    markPaidError.value = 'Choose a valid paid date and time.'
+    return
+  }
 
   markingPaidId.value = expense.id
 
   try {
-    await $api(`/admin/expenses/${expense.id}/mark-paid`, { method: 'POST' })
+    await $api(`/admin/expenses/${expense.id}/mark-paid`, {
+      method: 'POST',
+      body: { paid_at: paidAt },
+    })
+    markPaidOpen.value = false
     showNotice(`${expense.expense_number} marked as paid.`)
     await refresh()
   } catch (error: any) {
-    showNotice(extractApiErrorMessage(error, 'Could not mark this expense as paid.'))
+    markPaidError.value = extractApiErrorMessage(error, 'Could not mark this expense as paid.')
   } finally {
     markingPaidId.value = null
   }
@@ -560,6 +582,9 @@ function nextPage() {
                   <AppBadge :variant="statusVariant(expense.status)">
                     {{ label(expense.status) }}
                   </AppBadge>
+                  <p v-if="expense.paid_at" class="mt-1.5 text-[11px] text-gray-400">
+                    {{ dateTimeLabel(expense.paid_at) }}
+                  </p>
                 </td>
 
                 <td class="px-4 py-3 text-right text-sm font-semibold text-gray-950 dark:text-white">
@@ -579,7 +604,7 @@ function nextPage() {
                       <AppActionMenuItem
                         v-if="expense.status === 'pending'"
                         :disabled="markingPaidId === expense.id"
-                        @click="markPaid(expense); close()"
+                        @click="askMarkPaid(expense); close()"
                       >
                         {{ markingPaidId === expense.id ? 'Marking paid...' : 'Mark as paid' }}
                       </AppActionMenuItem>
@@ -662,6 +687,24 @@ function nextPage() {
       @close="formOpen = false"
       @saved="afterSaved"
     />
+
+    <AppConfirmModal
+      :open="markPaidOpen"
+      title="Mark expense as paid?"
+      :message="`This will mark “${expenseToMarkPaid?.title || 'this expense'}” as settled at the date and time below.`"
+      confirm-label="Mark paid"
+      :loading="Boolean(markingPaidId)"
+      :error="markPaidError"
+      @close="markPaidOpen = false"
+      @confirm="confirmMarkPaid"
+    >
+      <div class="rounded-[12px] bg-gray-950/[0.025] p-4 dark:bg-white/[0.035]">
+        <AppInput v-model="paidAtInput" type="datetime-local" label="Paid date & time" />
+        <p class="mt-2 text-[11px] leading-5 text-gray-400 dark:text-gray-500">
+          Shown in {{ timezoneLabel }}. Adjust it when recording an expense later.
+        </p>
+      </div>
+    </AppConfirmModal>
 
     <AppConfirmModal
       :open="cancelOpen"

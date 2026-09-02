@@ -64,6 +64,7 @@ type SaleInvoice = {
  paid_amount: string | number
  balance_amount: string | number
  completed_at: string | null
+ created_at?: string | null
  notes: string | null
  items?: SaleItem[]
 }
@@ -81,6 +82,8 @@ const emit = defineEmits<{
  printThermal58: [invoice: SaleInvoice]
 }>()
 
+const { formatDate: formatAppDate, formatDateTime: formatAppDateTime } = useAppDateTime()
+
 function money(value: string | number | null | undefined) {
  return Number(value || 0).toLocaleString('en', {
  minimumFractionDigits: 2,
@@ -89,13 +92,11 @@ function money(value: string | number | null | undefined) {
 }
 
 function dateLabel(value: string | null | undefined) {
- if (!value) return 'Not set'
+ return formatAppDate(value)
+}
 
- return new Intl.DateTimeFormat('en', {
- year: 'numeric',
- month: 'short',
- day: '2-digit',
- }).format(new Date(value))
+function dateTimeLabel(value: string | null | undefined) {
+ return formatAppDateTime(value)
 }
 
 function label(value: string | null | undefined) {
@@ -159,6 +160,13 @@ function itemDiscountTotal(invoice: SaleInvoice) {
  <p class="mt-1 text-[12px] leading-5 text-gray-400 dark:text-gray-500">
  {{ label(invoice.channel) }} · {{ dateLabel(invoice.sale_date) }}
  </p>
+
+ <p
+  v-if="invoice.channel === 'online' && invoice.created_at"
+  class="mt-1 text-[12px] leading-5 text-gray-500 dark:text-gray-400"
+ >
+  Order received {{ dateTimeLabel(invoice.created_at) }}
+ </p>
  </div>
 
  <div class="flex flex-wrap gap-2">
@@ -210,7 +218,7 @@ function itemDiscountTotal(invoice: SaleInvoice) {
  </p>
 
  <p class="mt-2 text-sm font-semibold text-gray-950 dark:text-white">
- {{ dateLabel(invoice.completed_at) }}
+ {{ dateTimeLabel(invoice.completed_at) }}
  </p>
 
  <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">

@@ -113,6 +113,7 @@ type SaleInvoice = {
  paid_amount: string | number
  balance_amount: string | number
  completed_at: string | null
+ created_at?: string | null
  notes: string | null
  items_count?: number
  items_sum_quantity?: string | number | null
@@ -203,6 +204,8 @@ const completeOpen = ref(false)
 const completing = ref(false)
 const completeError = ref('')
 const invoiceToComplete = ref<SaleInvoice | null>(null)
+const completedAtInput = ref('')
+const { formatDate: formatAppDate, formatDateTime: formatAppDateTime, toDateTimeInput, dateTimeInputToIso, timezoneLabel } = useAppDateTime()
 
 const statusModalOpen = ref(false)
 const invoiceForStatusUpdate = ref<SaleInvoice | null>(null)
@@ -460,13 +463,11 @@ function money(value: string | number | null | undefined) {
 }
 
 function dateLabel(value: string | null | undefined) {
- if (!value) return 'Not set'
+ return formatAppDate(value)
+}
 
- return new Intl.DateTimeFormat('en', {
- year: 'numeric',
- month: 'short',
- day: '2-digit',
- }).format(new Date(value))
+function dateTimeLabel(value: string | null | undefined) {
+ return formatAppDateTime(value)
 }
 
 function statusVariant(status: string): 'neutral' | 'green' | 'red' | 'amber' | 'blue' {
@@ -666,6 +667,7 @@ async function afterSaved(invoice: SaleInvoice, message?: string) {
 
 function askComplete(invoice: SaleInvoice) {
  invoiceToComplete.value = invoice
+ completedAtInput.value = toDateTimeInput()
  completeError.value = ''
  completeOpen.value = true
 }
@@ -676,11 +678,18 @@ async function confirmComplete() {
  completing.value = true
  completeError.value = ''
 
+ const completedAt = dateTimeInputToIso(completedAtInput.value)
+ if (!completedAt) {
+ completeError.value = 'Choose a valid completion date and time.'
+ completing.value = false
+ return
+ }
+
  try {
  const response = await $api<SaleInvoiceResponse>(`/admin/sale-invoices/${invoiceToComplete.value.id}/complete`, {
  method: 'POST',
  body: {
- completed_at: new Date().toISOString(),
+ completed_at: completedAt,
  note: `Sale completed from ${invoiceToComplete.value.invoice_number}`,
  },
  })
@@ -1218,6 +1227,13 @@ function nextPage() {
  <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
  {{ invoice.items_count ?? 0 }} lines · {{ invoice.items_sum_quantity ?? 0 }} units
  </p>
+
+ <p
+ v-if="invoice.channel === 'online' && invoice.created_at"
+ class="mt-1 text-xs text-gray-500 dark:text-gray-400"
+ >
+ Order received {{ dateTimeLabel(invoice.created_at) }}
+ </p>
  </td>
 
  <td class="min-w-0 px-4 py-3">
@@ -1251,7 +1267,7 @@ function nextPage() {
  v-if="invoice.completed_at"
  class="mt-2 text-xs text-gray-500 dark:text-gray-400"
  >
- Completed {{ dateLabel(invoice.completed_at) }}
+ Completed {{ dateTimeLabel(invoice.completed_at) }}
  </p>
  </td>
 
@@ -1443,6 +1459,11 @@ function nextPage() {
  </p>
  </div>
 
+ <div class="mt-3 space-y-1 text-xs text-gray-500 dark:text-gray-400">
+  <p v-if="invoice.channel === 'online' && invoice.created_at">Order received {{ dateTimeLabel(invoice.created_at) }}</p>
+  <p v-if="invoice.completed_at">Completed {{ dateTimeLabel(invoice.completed_at) }}</p>
+ </div>
+
  <div
  v-if="invoice.status === 'draft'"
  class="mt-4 grid grid-cols-4 gap-2"
@@ -1629,7 +1650,12 @@ function nextPage() {
  :error="completeError"
  @close="completeOpen = false"
  @confirm="confirmComplete"
- />
+ >
+  <div class="rounded-[12px] bg-gray-950/[0.025] p-4 dark:bg-white/[0.035]">
+   <AppInput v-model="completedAtInput" type="datetime-local" label="Sale completion date & time" />
+   <p class="mt-2 text-[11px] leading-5 text-gray-400 dark:text-gray-500">Shown in {{ timezoneLabel }}. You can adjust it when entering a sale later.</p>
+  </div>
+ </AppConfirmModal>
 
  <OrderStatusUpdateModal
  :open="statusModalOpen"

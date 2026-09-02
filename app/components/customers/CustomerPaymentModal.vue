@@ -56,11 +56,13 @@ const emit = defineEmits<{
 }>()
 
 const { $api } = useNuxtApp()
+const { todayDateInput, toDateTimeInput, dateTimeInputToIso, timezoneLabel } = useAppDateTime()
 
 const saving = ref(false)
 const saveMode = ref<'draft' | 'received'>('draft')
 const formError = ref('')
 const fieldErrors = ref<Record<string, string>>({})
+const receivedAtInput = ref(toDateTimeInput())
 
 const form = reactive({
  customer_id: null as number | null,
@@ -196,7 +198,7 @@ watch(
 )
 
 function todayDate() {
- return new Date().toISOString().slice(0, 10)
+ return todayDateInput()
 }
 
 function resetForm() {
@@ -215,6 +217,7 @@ function resetForm() {
  form.amount = maxReceivable.value
  form.reference_number = ''
  form.notes = ''
+ receivedAtInput.value = toDateTimeInput()
  saveMode.value = 'draft'
 }
 
@@ -267,6 +270,13 @@ async function submit(mode: 'draft' | 'received') {
  formError.value = ''
  fieldErrors.value = {}
 
+ const receivedAt = mode === 'received' ? dateTimeInputToIso(receivedAtInput.value) : null
+ if (mode === 'received' && !receivedAt) {
+ formError.value = 'Choose a valid payment receipt date and time.'
+ saving.value = false
+ return
+ }
+
  try {
  const created = await $api<CustomerPaymentResponse>('/admin/customer-payments', {
  method: 'POST',
@@ -277,7 +287,7 @@ async function submit(mode: 'draft' | 'received') {
  const received = await $api<CustomerPaymentResponse>(`/admin/customer-payments/${created.data.id}/receive`, {
  method: 'POST',
  body: {
- received_at: new Date().toISOString(),
+ received_at: receivedAt!,
  },
  })
 
@@ -369,6 +379,11 @@ async function submit(mode: 'draft' | 'received') {
  type="date"
  :error="fieldErrors.payment_date"
  />
+
+ <div>
+  <AppInput v-model="receivedAtInput" label="Received date & time" type="datetime-local" />
+  <p class="mt-1.5 text-[11px] leading-5 text-gray-400 dark:text-gray-500">Used when you choose Create & receive now · {{ timezoneLabel }}</p>
+ </div>
 
  <AppSelect
  v-model="form.payment_method"

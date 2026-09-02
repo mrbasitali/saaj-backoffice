@@ -53,10 +53,11 @@ type ProfitReportResponse = {
 }
 
 const { $api } = useNuxtApp()
+const { todayDateInput, startOfMonthInput, startOfYearInput } = useAppDateTime()
 
 const periodPreset = ref('month')
-const dateFrom = ref(new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10))
-const dateTo = ref(new Date().toISOString().slice(0, 10))
+const dateFrom = ref(startOfMonthInput())
+const dateTo = ref(todayDateInput())
 const sortBy = ref('latest')
 const perPage = ref(20)
 const page = ref(1)
@@ -78,14 +79,12 @@ const sortOptions = [
 ]
 
 function applyPreset(preset: string) {
-  const now = new Date()
-
   if (preset === 'month') {
-    dateFrom.value = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10)
-    dateTo.value = now.toISOString().slice(0, 10)
+    dateFrom.value = startOfMonthInput()
+    dateTo.value = todayDateInput()
   } else if (preset === 'year') {
-    dateFrom.value = new Date(now.getFullYear(), 0, 1).toISOString().slice(0, 10)
-    dateTo.value = now.toISOString().slice(0, 10)
+    dateFrom.value = startOfYearInput()
+    dateTo.value = todayDateInput()
   }
 }
 

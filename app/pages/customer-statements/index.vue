@@ -69,6 +69,7 @@ type CustomerStatementResponse = {
 }
 
 const { $api } = useNuxtApp()
+const { formatDate: formatAppDate, todayDateInput, startOfMonthInput, startOfYearInput, previousMonthRangeInput } = useAppDateTime()
 
 const selectedCustomerId = ref('')
 const dateFrom = ref(startOfCurrentMonth())
@@ -166,30 +167,19 @@ const increaseEntries = computed(() => entries.value.filter((entry) => Number(en
 const decreaseEntries = computed(() => entries.value.filter((entry) => Number(entry.decrease || 0) > 0).length)
 
 function todayDate() {
- return new Date().toISOString().slice(0, 10)
+ return todayDateInput()
 }
 
 function startOfCurrentMonth() {
- const date = new Date()
-
- return new Date(date.getFullYear(), date.getMonth(), 1).toISOString().slice(0, 10)
+ return startOfMonthInput()
 }
 
 function startOfYear() {
- const date = new Date()
-
- return new Date(date.getFullYear(), 0, 1).toISOString().slice(0, 10)
+ return startOfYearInput()
 }
 
 function previousMonthRange() {
- const date = new Date()
- const start = new Date(date.getFullYear(), date.getMonth() - 1, 1)
- const end = new Date(date.getFullYear(), date.getMonth(), 0)
-
- return {
- from: start.toISOString().slice(0, 10),
- to: end.toISOString().slice(0, 10),
- }
+ return previousMonthRangeInput()
 }
 
 function setRange(range: 'this_month' | 'last_month' | 'year_to_date' | 'today') {
@@ -223,13 +213,7 @@ function money(value: string | number | null | undefined) {
 }
 
 function dateLabel(value: string | null | undefined) {
- if (!value) return 'Not set'
-
- return new Intl.DateTimeFormat('en', {
- year: 'numeric',
- month: 'short',
- day: '2-digit',
- }).format(new Date(value))
+ return formatAppDate(value)
 }
 
 function entryVariant(type: string): 'neutral' | 'green' | 'red' | 'amber' | 'blue' {

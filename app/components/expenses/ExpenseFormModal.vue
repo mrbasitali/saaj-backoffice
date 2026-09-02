@@ -31,6 +31,7 @@ type Expense = {
   amount: string | number
   payment_method: string
   status: string
+  paid_at?: string | null
   reference_number: string | null
   receipt_url: string | null
   notes: string | null
@@ -51,6 +52,7 @@ const emit = defineEmits<{
 }>()
 
 const { $api } = useNuxtApp()
+const { todayDateInput, toDateTimeInput, dateTimeInputToIso, timezoneLabel } = useAppDateTime()
 
 const saving = ref(false)
 const formError = ref('')
@@ -61,6 +63,7 @@ const receiptFile = ref<File | null>(null)
 const removeReceipt = ref(false)
 
 const copyingPrevious = ref(false)
+const paidAtInput = ref(toDateTimeInput())
 
 const form = reactive({
   expense_category_id: null as number | null,
@@ -133,7 +136,7 @@ watch(
 )
 
 function todayDate() {
-  return new Date().toISOString().slice(0, 10)
+  return todayDateInput()
 }
 
 function resetForm() {
@@ -153,6 +156,7 @@ function resetForm() {
   form.amount = props.expense ? String(props.expense.amount) : ''
   form.payment_method = props.expense?.payment_method ?? 'cash'
   form.is_paid = props.expense ? props.expense.status === 'paid' : true
+  paidAtInput.value = toDateTimeInput(props.expense?.paid_at || undefined)
   form.reference_number = props.expense?.reference_number ?? ''
   form.notes = props.expense?.notes ?? ''
 }
@@ -261,6 +265,7 @@ function buildFormData() {
 
   if (props.mode === 'create') {
     data.append('is_paid', form.is_paid ? '1' : '0')
+    if (form.is_paid) data.append('paid_at', dateTimeInputToIso(paidAtInput.value) || '')
   }
 
   if (receiptFile.value) {
@@ -276,6 +281,12 @@ async function submit() {
   saving.value = true
   formError.value = ''
   fieldErrors.value = {}
+
+  if (props.mode === 'create' && form.is_paid && !dateTimeInputToIso(paidAtInput.value)) {
+    formError.value = 'Choose a valid paid date and time.'
+    saving.value = false
+    return
+  }
 
   try {
     if (props.mode === 'create') {
@@ -419,6 +430,13 @@ async function submit() {
               label="Already paid"
               description="On means this is settled already. Off keeps it pending until you mark it paid."
             />
+
+            <div v-if="mode === 'create' && form.is_paid">
+              <AppInput v-model="paidAtInput" type="datetime-local" label="Paid date & time" />
+              <p class="mt-1.5 text-[11px] leading-5 text-gray-400 dark:text-gray-500">
+                Recorded in {{ timezoneLabel }}. Adjust this when entering an expense later.
+              </p>
+            </div>
 
             <AppTextarea
               v-model="form.notes"
