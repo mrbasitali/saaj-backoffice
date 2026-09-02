@@ -40,7 +40,19 @@ const { theme, toggleTheme } = useTheme()
 const sidebarOpen = ref(false)
 const sidebarCollapsed = ref(false)
 
-const navGroups = [
+type NavLink = {
+ label: string
+ to: string
+ icon: string
+ roles?: string[]
+}
+
+type NavGroup = {
+ label: string
+ links: NavLink[]
+}
+
+const navGroups: NavGroup[] = [
  {
  label: 'Overview',
  links: [
@@ -58,6 +70,18 @@ const navGroups = [
  label: 'Customer Statements',
  to: '/customer-statements',
  icon: 'document',
+ },
+ ],
+ },
+
+ {
+ label: 'Administration',
+ links: [
+ {
+ label: 'Users',
+ to: '/users',
+ icon: 'users',
+ roles: ['super_admin', 'admin'],
  },
  ],
  },
@@ -213,6 +237,13 @@ const navGroups = [
  },
 ]
 
+const visibleNavGroups = computed(() => navGroups
+ .map((group) => ({
+ ...group,
+ links: group.links.filter((link) => !link.roles || auth.hasRole(...link.roles)),
+ }))
+ .filter((group) => group.links.length > 0))
+
 const initials = computed(() => {
  const name = auth.user?.name || 'SA'
 
@@ -233,7 +264,7 @@ function isActive(to: string) {
 }
 
 const currentLink = computed(() => {
- for (const group of navGroups) {
+ for (const group of visibleNavGroups.value) {
  const link = group.links.find((item) => isActive(item.to))
 
  if (link) {
@@ -245,6 +276,8 @@ const currentLink = computed(() => {
 })
 
 const pageTitle = computed(() => {
+ if (route.path === '/profile') return 'My Profile'
+
  return currentLink.value?.label || 'Backoffice'
 })
 
@@ -509,7 +542,7 @@ watch(
  "
  >
  <div
- v-for="group in navGroups"
+ v-for="group in visibleNavGroups"
  :key="group.label"
  class="mb-4 last:mb-0"
  :class="
@@ -674,6 +707,26 @@ watch(
  : ''
  "
  >
+ <NuxtLink
+ to="/profile"
+ class="
+ flex
+ items-center
+ gap-2
+ min-w-0
+ flex-1
+ rounded-[10px]
+ p-1
+ transition
+ hover:bg-gray-950/[0.045]
+ dark:hover:bg-white/[0.06]
+ "
+ :title="
+ sidebarCollapsed
+ ? 'Open profile'
+ : undefined
+ "
+ >
  <div
  class="
  flex
@@ -682,22 +735,13 @@ watch(
  shrink-0
  items-center
  justify-center
-
  rounded-full
-
  bg-gray-950/[0.06]
-
  text-[12px]
  font-semibold
  text-gray-700
-
  dark:bg-white/[0.08]
  dark:text-gray-200
- "
- :title="
- sidebarCollapsed
- ? auth.user?.name
- : undefined
  "
  >
  {{ initials }}
@@ -739,6 +783,7 @@ watch(
  {{ auth.user?.email }}
  </p>
  </div>
+ </NuxtLink>
 
  <button
  type="button"

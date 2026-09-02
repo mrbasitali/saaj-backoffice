@@ -1,8 +1,11 @@
-type SaajUser = {
+export type SaajUser = {
   id: number
   name: string
   email: string
+  is_active: boolean
   roles: string[]
+  created_at: string | null
+  updated_at: string | null
 }
 
 type LoginResponse = {
@@ -84,6 +87,10 @@ export const useAuthStore = defineStore('auth', () => {
     return user.value?.roles.some((role) => roles.includes(role)) ?? false
   }
 
+  function setUser(nextUser: SaajUser) {
+    user.value = nextUser
+  }
+
   return {
     token,
     user,
@@ -93,5 +100,6 @@ export const useAuthStore = defineStore('auth', () => {
     fetchMe,
     logout,
     hasRole,
+    setUser,
   }
 })
