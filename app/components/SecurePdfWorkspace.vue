@@ -3,13 +3,18 @@ const { $api } = useNuxtApp()
 const { state, closePdf } = useSecurePdf()
 
 const pdfFile = shallowRef<File | null>(null)
+const exportFile = shallowRef<File | null>(null)
 const objectUrl = ref('')
 const errorMessage = ref('')
 const actionMessage = ref('')
-const previewFrame = ref<HTMLIFrameElement | null>(null)
-const previewReady = ref(false)
+const printFrame = ref<HTMLIFrameElement | null>(null)
+const printReady = ref(false)
 const sharing = ref(false)
 const printing = ref(false)
+const downloadNameOpen = ref(false)
+const downloadName = ref('')
+const downloadNameError = ref('')
+const downloadNameInput = ref<{ focus: () => void } | null>(null)
 let abortController: AbortController | null = null
 
 const request = computed(() => state.value.request)
@@ -19,11 +24,13 @@ const fileSize = computed(() => {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 })
 
+const preparedDownloadFilename = computed(() => safeFilename(downloadName.value))
+
 const canShareFile = computed(() => {
-  if (!import.meta.client || !pdfFile.value || !navigator.share || !navigator.canShare) return false
+  if (!import.meta.client || !exportFile.value || !navigator.share || !navigator.canShare) return false
 
   try {
-    return navigator.canShare({ files: [pdfFile.value] })
+    return navigator.canShare({ files: [exportFile.value] })
   } catch {
     return false
   }
@@ -38,20 +45,40 @@ watch(
 )
 
 onBeforeUnmount(() => {
+  window.removeEventListener('keydown', interceptDownloadEscape, true)
   releasePdf()
   closePdf()
 })
 
+onMounted(() => {
+  window.addEventListener('keydown', interceptDownloadEscape, true)
+})
+
 function safeFilename(value: string) {
-  const withoutExtension = value.replace(/\.pdf$/i, '')
-  const safe = withoutExtension
+  let safe = value
+    .replace(/\.pdf$/i, '')
     .normalize('NFKC')
-    .replace(/[^a-zA-Z0-9._-]+/g, '-')
+    .replace(/[\u0000-\u001f\u007f]/g, '')
+    .replace(/[\u202a-\u202e\u2066-\u2069]/g, '')
+    .replace(/[<>:"/\\|?*]+/g, '-')
+    .replace(/\s+/g, ' ')
     .replace(/-+/g, '-')
-    .replace(/^[-.]+|[-.]+$/g, '')
-    .slice(0, 150)
+    .replace(/^[.\s-]+|[.\s-]+$/g, '')
+    .trim()
+
+  // Array.from truncates by Unicode code point, avoiding a broken surrogate
+  // pair when an administrator uses Urdu text or emoji in a file name.
+  safe = Array.from(safe).slice(0, 140).join('').trim()
+
+  if (/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(safe)) {
+    safe = `document-${safe}`
+  }
 
   return `${safe || 'document'}.pdf`
+}
+
+function filenameStem(value: string) {
+  return value.replace(/\.pdf$/i, '')
 }
 
 function releasePdf() {
@@ -62,11 +89,15 @@ function releasePdf() {
 
   objectUrl.value = ''
   pdfFile.value = null
+  exportFile.value = null
   errorMessage.value = ''
   actionMessage.value = ''
-  previewReady.value = false
+  printReady.value = false
   sharing.value = false
   printing.value = false
+  downloadNameOpen.value = false
+  downloadName.value = ''
+  downloadNameError.value = ''
 }
 
 async function loadPdf() {
@@ -102,6 +133,7 @@ async function loadPdf() {
     })
 
     pdfFile.value = file
+    exportFile.value = file
     objectUrl.value = URL.createObjectURL(file)
     state.value.status = 'ready'
   } catch (error: any) {
@@ -120,46 +152,72 @@ async function loadPdf() {
 }
 
 function close() {
+  if (downloadNameOpen.value) {
+    closeDownloadDialog()
+    return
+  }
+
   releasePdf()
   closePdf()
 }
 
-function openInNewTab() {
-  if (!objectUrl.value) return
+function interceptDownloadEscape(event: KeyboardEvent) {
+  if (event.key !== 'Escape' || !downloadNameOpen.value) return
 
-  const popup = window.open(objectUrl.value, '_blank')
-  if (!popup) {
-    actionMessage.value = 'Your browser blocked the new tab. You can still print, share, or download from this window.'
+  event.preventDefault()
+  event.stopImmediatePropagation()
+  closeDownloadDialog()
+}
+
+async function openDownloadDialog() {
+  if (!exportFile.value) return
+
+  downloadName.value = filenameStem(exportFile.value.name)
+  downloadNameError.value = ''
+  downloadNameOpen.value = true
+  await nextTick()
+  downloadNameInput.value?.focus()
+}
+
+function closeDownloadDialog() {
+  downloadNameOpen.value = false
+  downloadNameError.value = ''
+}
+
+function confirmDownload() {
+  if (!objectUrl.value || !pdfFile.value) return
+
+  const rawStem = downloadName.value.replace(/\.pdf$/i, '').trim()
+  if (!rawStem) {
+    downloadNameError.value = 'Enter a file name.'
+    downloadNameInput.value?.focus()
     return
   }
 
-  try {
-    popup.opener = null
-  } catch {
-    // The PDF still opened. Some browsers isolate the new tab before
-    // JavaScript can explicitly clear its opener reference.
-  }
-}
-
-function downloadPdf() {
-  if (!objectUrl.value || !pdfFile.value) return
+  const filename = safeFilename(rawStem)
+  exportFile.value = new File([pdfFile.value], filename, {
+    type: 'application/pdf',
+    lastModified: pdfFile.value.lastModified,
+  })
 
   const anchor = document.createElement('a')
   anchor.href = objectUrl.value
-  anchor.download = pdfFile.value.name
+  anchor.download = filename
   anchor.rel = 'noopener noreferrer'
   document.body.appendChild(anchor)
   anchor.click()
   anchor.remove()
-  actionMessage.value = `Downloaded as ${pdfFile.value.name}`
+
+  closeDownloadDialog()
+  actionMessage.value = `Downloaded as ${filename}`
 }
 
 async function sharePdf() {
-  if (!pdfFile.value) return
+  if (!exportFile.value) return
 
   if (!canShareFile.value) {
-    downloadPdf()
-    actionMessage.value = 'Your browser does not provide secure file sharing. The correctly named PDF was downloaded so you can attach it manually.'
+    actionMessage.value = 'Direct file sharing is unavailable in this browser. Download a named copy, then attach it in WhatsApp or your preferred app.'
+    await openDownloadDialog()
     return
   }
 
@@ -167,9 +225,11 @@ async function sharePdf() {
   actionMessage.value = ''
 
   try {
+    // Supplying only the file avoids injecting document titles such as
+    // "80mm receipt" into WhatsApp's message field. The File name remains
+    // available to the receiving app.
     await navigator.share({
-      files: [pdfFile.value],
-      title: request.value?.title || pdfFile.value.name,
+      files: [exportFile.value],
     })
   } catch (error: any) {
     if (error?.name !== 'AbortError') {
@@ -181,23 +241,26 @@ async function sharePdf() {
 }
 
 function printPdf() {
-  if (!objectUrl.value) return
+  if (!objectUrl.value || !printReady.value) return
 
   printing.value = true
   actionMessage.value = ''
 
   try {
-    const frameWindow = previewFrame.value?.contentWindow
-    if (!frameWindow) throw new Error('PDF preview is unavailable.')
+    const frameWindow = printFrame.value?.contentWindow
+    if (!frameWindow) throw new Error('PDF print frame is unavailable.')
 
     frameWindow.focus()
     frameWindow.print()
   } catch {
-    openInNewTab()
-    actionMessage.value = 'The PDF opened in the browser viewer. Choose Print from the browser menu.'
+    actionMessage.value = 'This browser could not open its print sheet. Use Share and choose Print, or download the PDF and print it from Files.'
   } finally {
     window.setTimeout(() => { printing.value = false }, 500)
   }
+}
+
+function onPreviewError(message: string) {
+  actionMessage.value = message
 }
 </script>
 
@@ -220,8 +283,8 @@ function printPdf() {
           <span class="basis-full text-[11px] text-gray-400 dark:text-gray-500 sm:basis-auto">Downloads and shares create a device copy</span>
         </div>
 
-        <div v-if="pdfFile" class="min-w-0 text-right">
-          <p class="max-w-[420px] truncate text-[11px] font-medium text-gray-600 dark:text-gray-300">{{ pdfFile.name }}</p>
+        <div v-if="exportFile" class="min-w-0 text-right">
+          <p class="max-w-[420px] truncate text-[11px] font-medium text-gray-600 dark:text-gray-300">{{ exportFile.name }}</p>
           <p class="mt-0.5 text-[10px] text-gray-400 dark:text-gray-600">{{ fileSize }}</p>
         </div>
       </div>
@@ -252,13 +315,23 @@ function printPdf() {
       </div>
 
       <template v-else-if="state.status === 'ready' && objectUrl">
+        <SecurePdfCanvasViewer
+          v-if="pdfFile"
+          :file="pdfFile"
+          @error="onPreviewError"
+        />
+
+        <!-- Kept off-screen solely for the browser's native multi-page print
+             pipeline. The visible viewer never exposes the blob URL toolbar. -->
         <iframe
-          ref="previewFrame"
+          ref="printFrame"
           :src="objectUrl"
-          :title="request?.title || 'PDF preview'"
-          class="h-[56dvh] min-h-[360px] w-full rounded-[16px] bg-gray-100 dark:bg-white/[0.045]"
+          title="PDF print source"
+          class="pointer-events-none fixed -left-[10000px] top-0 h-px w-px opacity-0"
           referrerpolicy="no-referrer"
-          @load="previewReady = true"
+          tabindex="-1"
+          aria-hidden="true"
+          @load="printReady = true"
         />
 
         <p
@@ -274,20 +347,12 @@ function printPdf() {
       <div class="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
         <AppButton variant="ghost" :disabled="sharing || printing" @click="close">Close</AppButton>
 
-        <div class="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-end">
+        <div class="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap sm:justify-end">
           <AppButton
             v-if="state.status === 'ready'"
             variant="secondary"
             :disabled="sharing || printing"
-            @click="openInNewTab"
-          >
-            Open separately
-          </AppButton>
-          <AppButton
-            v-if="state.status === 'ready'"
-            variant="secondary"
-            :disabled="sharing || printing"
-            @click="downloadPdf"
+            @click="openDownloadDialog"
           >
             Download
           </AppButton>
@@ -303,12 +368,47 @@ function printPdf() {
           <AppButton
             v-if="state.status === 'ready'"
             :loading="printing"
-            :disabled="sharing || !previewReady"
+            :disabled="sharing || !printReady"
             @click="printPdf"
           >
-            {{ previewReady ? 'Print' : 'Previewing…' }}
+            {{ printReady ? 'Print' : 'Preparing…' }}
           </AppButton>
         </div>
+      </div>
+    </template>
+  </AppModal>
+
+  <AppModal
+    :open="downloadNameOpen"
+    title="Download PDF"
+    description="Confirm the suggested file name or enter a clearer one for this copy."
+    max-width="max-w-md"
+    @close="closeDownloadDialog"
+  >
+    <form class="px-4 py-5" @submit.prevent="confirmDownload">
+      <AppInput
+        ref="downloadNameInput"
+        v-model="downloadName"
+        label="File name"
+        autocomplete="off"
+        :error="downloadNameError"
+        @input="downloadNameError = ''"
+      >
+        <template #suffix><span class="text-[12px] font-medium">.pdf</span></template>
+      </AppInput>
+
+      <div class="mt-3 rounded-[10px] bg-gray-950/[0.035] px-3 py-2.5 dark:bg-white/[0.045]">
+        <p class="text-[10px] font-semibold uppercase tracking-[0.1em] text-gray-400 dark:text-gray-500">Download as</p>
+        <p class="mt-1 break-all text-[12px] font-medium text-gray-700 dark:text-gray-300">{{ preparedDownloadFilename }}</p>
+      </div>
+
+      <button type="submit" class="sr-only">Download PDF</button>
+    </form>
+
+    <template #footer>
+      <div class="flex items-center justify-end gap-2">
+        <AppButton variant="ghost" @click="closeDownloadDialog">Cancel</AppButton>
+        <AppButton @click="confirmDownload">Download</AppButton>
       </div>
     </template>
   </AppModal>

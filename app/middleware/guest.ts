@@ -1,12 +1,11 @@
 export default defineNuxtRouteMiddleware(async () => {
   const auth = useAuthStore()
 
-  if (auth.token && !auth.user) {
+  if (!auth.user) {
     try {
       await auth.fetchMe()
     } catch {
-      auth.token = null
-      auth.user = null
+      auth.clearSession()
     }
   }
 

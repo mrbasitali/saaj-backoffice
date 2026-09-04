@@ -302,7 +302,7 @@ function openSessionsConfirmation() {
     <AppConfirmModal
       :open="sessionsOpen"
       title="Sign out other devices?"
-      message="Every other active backoffice token for your account will be revoked. This device will stay signed in."
+      message="Every other active backoffice session for your account will be revoked. This device will stay signed in."
       confirm-label="Sign out others"
       :loading="sessionsSaving"
       :error="sessionsError"

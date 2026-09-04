@@ -575,8 +575,8 @@ function printThermalReceipt(invoice: SaleInvoice, paper: '80' | '58' = '80') {
 
  return openProtectedPdf(
  `/admin/sale-invoices/${invoice.id}/thermal-receipt?paper=${paper}`,
- `sales-receipt-${invoice.invoice_number}-${paper}mm.pdf`,
- `${paper}mm receipt ${invoice.invoice_number}`,
+ `sales-receipt-${invoice.invoice_number}.pdf`,
+ `Sales receipt ${invoice.invoice_number}`,
  )
 }
 

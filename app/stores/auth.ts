@@ -10,7 +10,6 @@ export type SaajUser = {
 
 type LoginResponse = {
   message: string
-  token: string
   user: SaajUser
 }
 
@@ -19,15 +18,14 @@ type MeResponse = {
 }
 
 export const useAuthStore = defineStore('auth', () => {
-  const token = useCookie<string | null>('saaj_token', {
-    sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
-  })
-
   const user = ref<SaajUser | null>(null)
   const loading = ref(false)
 
-  const isLoggedIn = computed(() => Boolean(token.value && user.value))
+  const isLoggedIn = computed(() => user.value !== null)
+
+  function clearSession() {
+    user.value = null
+  }
 
   async function login(email: string, password: string) {
     const { $api } = useNuxtApp()
@@ -35,35 +33,26 @@ export const useAuthStore = defineStore('auth', () => {
     loading.value = true
 
     try {
-        const response = await $api<LoginResponse>('/login', {
+      const response = await $api<LoginResponse>('/login', {
         method: 'POST',
         body: {
-            email,
-            password,
+          email,
+          password,
         },
-        })
+      })
 
-        token.value = response.token
-        user.value = response.user
-
-        return response
+      user.value = response.user
+      return response
     } finally {
-        loading.value = false
+      loading.value = false
     }
   }
 
   async function fetchMe() {
-    if (!token.value) {
-      user.value = null
-      return null
-    }
-
     const { $api } = useNuxtApp()
-
     const response = await $api<MeResponse>('/me')
 
     user.value = response.user
-
     return response.user
   }
 
@@ -71,20 +60,23 @@ export const useAuthStore = defineStore('auth', () => {
     const { $api } = useNuxtApp()
 
     try {
-      if (token.value) {
-        await $api('/logout', {
-          method: 'POST',
-        })
-      }
-    } finally {
-      token.value = null
-      user.value = null
-      await navigateTo('/login')
+      await $api('/logout', {
+        method: 'POST',
+      })
+    } catch (error: any) {
+      const status = Number(error?.response?.status ?? error?.statusCode ?? error?.status ?? 0)
+
+      // A 401 means the server-side login is already gone. Network/server
+      // failures are rethrown so the UI never claims a live session ended.
+      if (status !== 401) throw error
     }
+
+    clearSession()
+    await navigateTo('/login')
   }
 
   function hasRole(...roles: string[]) {
-    return user.value?.roles.some((role) => roles.includes(role)) ?? false
+    return user.value?.roles.some(role => roles.includes(role)) ?? false
   }
 
   function setUser(nextUser: SaajUser) {
@@ -92,7 +84,6 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   return {
-    token,
     user,
     loading,
     isLoggedIn,
@@ -101,5 +92,6 @@ export const useAuthStore = defineStore('auth', () => {
     logout,
     hasRole,
     setUser,
+    clearSession,
   }
 })
