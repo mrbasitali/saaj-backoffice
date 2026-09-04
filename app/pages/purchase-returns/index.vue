@@ -92,6 +92,7 @@ type InventoryLocationResponse = {
 }
 
 const { $api } = useNuxtApp()
+const { openPdf: openSecurePdf, state: securePdfState } = useSecurePdf()
 
 const search = ref('')
 const debouncedSearch = ref('')
@@ -121,6 +122,7 @@ const deleteOpen = ref(false)
 const deleting = ref(false)
 const deleteError = ref('')
 const returnToDelete = ref<PurchaseReturn | null>(null)
+const printingDocument = computed(() => securePdfState.value.status === 'loading')
 
 const notice = ref('')
 const noticeTimer = ref<ReturnType<typeof setTimeout> | null>(null)
@@ -475,6 +477,21 @@ async function confirmDelete() {
  } finally {
  deleting.value = false
  }
+}
+
+function openReturnPdf(purchaseReturn: PurchaseReturn) {
+ if (purchaseReturn.status !== 'approved') {
+ showNotice('Approve this purchase return before opening its PDF.')
+ return
+ }
+
+ openSecurePdf({
+ endpoint: `/admin/purchase-returns/${purchaseReturn.id}/pdf`,
+ filename: `purchase-return-${purchaseReturn.return_number}.pdf`,
+ title: `Purchase return ${purchaseReturn.return_number}`,
+ description: 'Private purchase return — review before printing, sharing, or downloading.',
+ errorFallback: 'Could not generate the purchase return PDF.',
+ })
 }
 
 function clearFilters() {
@@ -918,6 +935,17 @@ function nextPage() {
  </AppButton>
  </div>
 
+ <AppButton
+ v-else-if="purchaseReturn.status === 'approved'"
+ type="button"
+ variant="secondary"
+ size="sm"
+ :loading="printingDocument"
+ @click="openReturnPdf(purchaseReturn)"
+ >
+ PDF
+ </AppButton>
+
  <span
  v-else
  class="text-xs font-medium text-gray-400 dark:text-gray-500"
@@ -929,6 +957,7 @@ function nextPage() {
  </tbody>
  </table>
  </div>
+
  </AppCard>
 
  <div class="grid gap-3 xl:hidden">
@@ -988,6 +1017,18 @@ function nextPage() {
  Delete
  </AppButton>
  </div>
+
+ <AppButton
+ v-if="purchaseReturn.status === 'approved'"
+ class="mt-4 w-full"
+ type="button"
+ variant="secondary"
+ size="sm"
+ :loading="printingDocument"
+ @click="openReturnPdf(purchaseReturn)"
+ >
+ Open PDF
+ </AppButton>
  </AppCard>
  </div>
 

@@ -79,6 +79,7 @@ type SaleInvoiceIndexResponse = {
 }
 
 const { $api } = useNuxtApp()
+const { openPdf: openSecurePdf, state: securePdfState } = useSecurePdf()
 
 const search = ref('')
 const debouncedSearch = ref('')
@@ -108,7 +109,7 @@ const deleting = ref(false)
 const deleteError = ref('')
 const paymentToDelete = ref<CustomerPayment | null>(null)
 
-const printingDocument = ref(false)
+const printingDocument = computed(() => securePdfState.value.status === 'loading')
 
 const notice = ref('')
 const noticeTimer = ref<ReturnType<typeof setTimeout> | null>(null)
@@ -479,37 +480,14 @@ async function confirmDelete() {
  }
 }
 
-async function openProtectedPdf(path: string, fileName: string) {
- if (!import.meta.client) return
-
- printingDocument.value = true
-
- try {
- const blob = await $api<Blob>(path, {
- responseType: 'blob',
+function openProtectedPdf(path: string, fileName: string, title: string) {
+ openSecurePdf({
+ endpoint: path,
+ filename: fileName,
+ title,
+ description: 'Private payment receipt — review before printing, sharing, or downloading.',
+ errorFallback: `Could not open ${fileName}. Receive the payment first, then try again.`,
  })
-
- const pdfBlob = blob instanceof Blob
- ? blob
- : new Blob([blob], { type: 'application/pdf' })
-
- const url = URL.createObjectURL(pdfBlob)
- const popup = window.open(url, '_blank', 'noopener,noreferrer')
-
- if (!popup) {
- showNotice('Popup blocked. Please allow popups for this site and try again.')
- URL.revokeObjectURL(url)
- return
- }
-
- setTimeout(() => {
- URL.revokeObjectURL(url)
- }, 60_000)
- } catch (error: any) {
- showNotice(extractApiErrorMessage(error, `Could not open ${fileName}. Receive the payment first, then try again.`))
- } finally {
- printingDocument.value = false
- }
 }
 
 function printReceipt(payment: CustomerPayment) {
@@ -520,7 +498,8 @@ function printReceipt(payment: CustomerPayment) {
 
  return openProtectedPdf(
  `/admin/customer-payments/${payment.id}/pdf`,
- `customer-payment-${payment.payment_number}.pdf`,
+ `customer-payment-receipt-${payment.payment_number}.pdf`,
+ `Customer payment ${payment.payment_number}`,
  )
 }
 

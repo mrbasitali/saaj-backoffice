@@ -56,6 +56,8 @@ type InventoryReportResponse = {
 type LocationIndexResponse = { data: InventoryLocation[] }
 
 const { $api } = useNuxtApp()
+const { todayDateInput } = useAppDateTime()
+const { openPdf: openSecurePdf, state: securePdfState } = useSecurePdf()
 
 const locationFilter = ref('all')
 const stockStatusFilter = ref('all')
@@ -64,7 +66,7 @@ const debouncedSearch = ref('')
 const sortBy = ref('available_low')
 const perPage = ref(20)
 const page = ref(1)
-const exportingPdf = ref(false)
+const exportingPdf = computed(() => securePdfState.value.status === 'loading')
 const notice = ref('')
 const noticeTimer = ref<ReturnType<typeof setTimeout> | null>(null)
 
@@ -176,33 +178,15 @@ function showNotice(message: string) {
   noticeTimer.value = setTimeout(() => { notice.value = '' }, 3000)
 }
 
-async function exportPdf() {
-  if (!import.meta.client) return
-
-  exportingPdf.value = true
-
-  try {
-    const blob = await $api<Blob>('/admin/reports/inventory/pdf', {
-      query: buildQuery(),
-      responseType: 'blob',
-    })
-
-    const pdfBlob = blob instanceof Blob ? blob : new Blob([blob], { type: 'application/pdf' })
-    const url = URL.createObjectURL(pdfBlob)
-    const popup = window.open(url, '_blank', 'noopener,noreferrer')
-
-    if (!popup) {
-      showNotice('Popup blocked. Please allow popups for this site and try again.')
-      URL.revokeObjectURL(url)
-      return
-    }
-
-    setTimeout(() => URL.revokeObjectURL(url), 60_000)
-  } catch (error: any) {
-    showNotice(error?.data?.message || 'Could not generate the inventory report PDF.')
-  } finally {
-    exportingPdf.value = false
-  }
+function exportPdf() {
+  openSecurePdf({
+    endpoint: '/admin/reports/inventory/pdf',
+    query: buildQuery(),
+    filename: `inventory-report-${todayDateInput()}.pdf`,
+    title: 'Inventory report',
+    description: 'Current inventory position using the selected filters',
+    errorFallback: 'Could not generate the inventory report PDF.',
+  })
 }
 
 function previousPage() {

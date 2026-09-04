@@ -20,3 +20,21 @@ export function extractApiErrorMessage(error: any, fallback: string): string {
 
   return specificMessage || error?.data?.message || fallback
 }
+
+export async function extractBlobApiErrorMessage(error: any, fallback: string): Promise<string> {
+  const data = error?.data
+
+  if (data instanceof Blob) {
+    try {
+      const parsed = JSON.parse(await data.text())
+      const firstFieldError = Object.values(parsed?.errors || {})[0]
+      const specificMessage = Array.isArray(firstFieldError) ? firstFieldError[0] : firstFieldError
+
+      return specificMessage || parsed?.message || fallback
+    } catch {
+      return fallback
+    }
+  }
+
+  return extractApiErrorMessage(error, fallback)
+}

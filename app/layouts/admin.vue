@@ -1117,5 +1117,7 @@ watch(
  @close="logoutConfirmOpen = false"
  @confirm="confirmLogout"
  />
+
+ <SecurePdfWorkspace />
  </div>
 </template>

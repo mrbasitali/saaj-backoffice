@@ -6,6 +6,7 @@ definePageMeta({
 
 const { $api } = useNuxtApp()
 const { todayDateInput, startOfMonthInput } = useAppDateTime()
+const { openPdf: openSecurePdf, state: securePdfState } = useSecurePdf()
 
 const selectedPeriod = ref('month')
 const customDateFrom = ref(startOfMonthInput())
@@ -196,7 +197,7 @@ function numberFormat(value: unknown) {
  )
 }
 
-const exportingPdf = ref(false)
+const exportingPdf = computed(() => securePdfState.value.status === 'loading')
 const notice = ref('')
 const noticeTimer = ref<ReturnType<typeof setTimeout> | null>(null)
 
@@ -210,37 +211,20 @@ function showNotice(message: string) {
  }, 3000)
 }
 
-async function exportPdf() {
- if (!import.meta.client) return
-
- exportingPdf.value = true
-
- try {
+function exportPdf() {
  const query = selectedPeriod.value === 'custom'
  ? { date_from: customDateFrom.value, date_to: customDateTo.value }
  : { period: selectedPeriod.value }
+ const period = data.value?.period
 
- const blob = await $api<Blob>('/admin/reports/dashboard/pdf', {
+ openSecurePdf({
+ endpoint: '/admin/reports/dashboard/pdf',
  query,
- responseType: 'blob',
+ filename: `dashboard-report-${period?.date_from || customDateFrom.value}-to-${period?.date_to || customDateTo.value}.pdf`,
+ title: 'Dashboard report',
+ description: `${selectedPeriodLabel.value} performance summary`,
+ errorFallback: 'Could not generate the dashboard PDF.',
  })
-
- const pdfBlob = blob instanceof Blob ? blob : new Blob([blob], { type: 'application/pdf' })
- const url = URL.createObjectURL(pdfBlob)
- const popup = window.open(url, '_blank', 'noopener,noreferrer')
-
- if (!popup) {
- showNotice('Popup blocked. Please allow popups for this site and try again.')
- URL.revokeObjectURL(url)
- return
- }
-
- setTimeout(() => URL.revokeObjectURL(url), 60_000)
- } catch (error: any) {
- showNotice(error?.data?.message || 'Could not generate the dashboard PDF.')
- } finally {
- exportingPdf.value = false
- }
 }
 </script>
 

@@ -63,6 +63,7 @@ type LocationIndexResponse = { data: InventoryLocation[] }
 
 const { $api } = useNuxtApp()
 const { todayDateInput, startOfMonthInput, startOfYearInput } = useAppDateTime()
+const { openPdf: openSecurePdf, state: securePdfState } = useSecurePdf()
 
 const periodPreset = ref('month')
 const dateFrom = ref(startOfMonthInput())
@@ -74,7 +75,7 @@ const debouncedSearch = ref('')
 const sortBy = ref('latest')
 const perPage = ref(20)
 const page = ref(1)
-const exportingPdf = ref(false)
+const exportingPdf = computed(() => securePdfState.value.status === 'loading')
 const notice = ref('')
 const noticeTimer = ref<ReturnType<typeof setTimeout> | null>(null)
 
@@ -214,33 +215,17 @@ function showNotice(message: string) {
   noticeTimer.value = setTimeout(() => { notice.value = '' }, 3000)
 }
 
-async function exportPdf() {
-  if (!import.meta.client) return
+function exportPdf() {
+  const period = data.value?.period
 
-  exportingPdf.value = true
-
-  try {
-    const blob = await $api<Blob>('/admin/reports/purchases/pdf', {
-      query: buildQuery(),
-      responseType: 'blob',
-    })
-
-    const pdfBlob = blob instanceof Blob ? blob : new Blob([blob], { type: 'application/pdf' })
-    const url = URL.createObjectURL(pdfBlob)
-    const popup = window.open(url, '_blank', 'noopener,noreferrer')
-
-    if (!popup) {
-      showNotice('Popup blocked. Please allow popups for this site and try again.')
-      URL.revokeObjectURL(url)
-      return
-    }
-
-    setTimeout(() => URL.revokeObjectURL(url), 60_000)
-  } catch (error: any) {
-    showNotice(error?.data?.message || 'Could not generate the purchase report PDF.')
-  } finally {
-    exportingPdf.value = false
-  }
+  openSecurePdf({
+    endpoint: '/admin/reports/purchases/pdf',
+    query: buildQuery(),
+    filename: `purchase-report-${period?.date_from || dateFrom.value}-to-${period?.date_to || dateTo.value}.pdf`,
+    title: 'Purchase report',
+    description: `${period?.date_from || dateFrom.value} to ${period?.date_to || dateTo.value}`,
+    errorFallback: 'Could not generate the purchase report PDF.',
+  })
 }
 
 function previousPage() {

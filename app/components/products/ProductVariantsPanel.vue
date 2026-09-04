@@ -20,6 +20,7 @@ const emit = defineEmits<{
 }>()
 
 const { $api } = useNuxtApp()
+const { openPdf: openSecurePdf, state: securePdfState } = useSecurePdf()
 
 const variants = ref<Variant[]>([])
 const loading = ref(false)
@@ -38,6 +39,13 @@ const variantToDelete = ref<Variant | null>(null)
 
 const printingVariantId = ref<number | null>(null)
 const printingCardVariantId = ref<number | null>(null)
+
+watch(() => securePdfState.value.status, (status) => {
+ if (status !== 'loading') {
+ printingVariantId.value = null
+ printingCardVariantId.value = null
+ }
+})
 
 const notice = ref('')
 const noticeTimer = ref<ReturnType<typeof setTimeout> | null>(null)
@@ -213,106 +221,36 @@ async function confirmDelete() {
  }
 }
 
-async function extractPdfErrorMessage(
- error: any,
- fallback: string,
-): Promise<string> {
- const data = error?.data
-
- if (data instanceof Blob) {
- try {
- const parsed = JSON.parse(await data.text())
- return parsed?.message || fallback
- } catch {
- return fallback
- }
- }
-
- return data?.message || fallback
-}
-
-async function openPdfInNewTab(
- path: string,
- errorFallback: string,
-) {
- if (!import.meta.client) {
- return
- }
-
- try {
- const blob = await $api<Blob>(path, {
- responseType: 'blob',
- })
-
- const pdfBlob =
- blob instanceof Blob
- ? blob
- : new Blob([blob], {
- type: 'application/pdf',
- })
-
- const url = URL.createObjectURL(pdfBlob)
-
- const popup = window.open(
- url,
- '_blank',
- 'noopener,noreferrer',
- )
-
- if (!popup) {
- showNotice(
- 'Popup blocked. Please allow popups for this site and try again.',
- )
-
- URL.revokeObjectURL(url)
- return
- }
-
- setTimeout(() => {
- URL.revokeObjectURL(url)
- }, 60_000)
- } catch (error: any) {
- showNotice(
- await extractPdfErrorMessage(
- error,
- errorFallback,
- ),
- )
- }
-}
-
-async function printVariantTag(variant: Variant) {
+function printVariantTag(variant: Variant) {
  if (printingVariantId.value) {
  return
  }
 
  printingVariantId.value = variant.id
 
- try {
- await openPdfInNewTab(
- `/admin/product-variants/${variant.id}/label`,
- 'Could not print a tag for this variant.',
- )
- } finally {
- printingVariantId.value = null
- }
+ openSecurePdf({
+ endpoint: `/admin/product-variants/${variant.id}/label`,
+ filename: `tag-${variant.sku}.pdf`,
+ title: `Product tag — ${variant.sku}`,
+ description: `${props.productName}${variant.option_summary ? ` · ${variant.option_summary}` : ''}`,
+ errorFallback: 'Could not print a tag for this variant.',
+ })
 }
 
-async function printVariantCard(variant: Variant) {
+function printVariantCard(variant: Variant) {
  if (printingCardVariantId.value) {
  return
  }
 
  printingCardVariantId.value = variant.id
 
- try {
- await openPdfInNewTab(
- `/admin/product-variants/${variant.id}/packaging-card`,
- 'Could not print a packaging card for this variant.',
- )
- } finally {
- printingCardVariantId.value = null
- }
+ openSecurePdf({
+ endpoint: `/admin/product-variants/${variant.id}/packaging-card`,
+ filename: `packaging-card-${variant.sku}.pdf`,
+ title: `Packaging card — ${variant.sku}`,
+ description: `${props.productName}${variant.option_summary ? ` · ${variant.option_summary}` : ''}`,
+ errorFallback: 'Could not print a packaging card for this variant.',
+ })
 }
 
 onBeforeUnmount(() => {

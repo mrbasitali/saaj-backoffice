@@ -156,6 +156,7 @@ type InventoryStockIndexResponse = {
 }
 
 const { $api } = useNuxtApp()
+const { openPdf: openSecurePdf, state: securePdfState } = useSecurePdf()
 const route = useRoute()
 const unreadOnlineOrders = useState<number>('admin-unread-online-orders', () => 0)
 const unreadOnly = ref(route.query.unread === '1')
@@ -179,7 +180,7 @@ const debouncedSearch = ref('')
 
 const viewOpen = ref(false)
 const viewingInvoiceId = ref<number | null>(null)
-const printingDocument = ref(false)
+const printingDocument = computed(() => securePdfState.value.status === 'loading')
 
 const selectedCustomerIds = ref<string[]>([])
 const selectedLocationIds = ref<string[]>([])
@@ -543,37 +544,14 @@ async function openView(invoice: SaleInvoice) {
  }
 }
 
-async function openProtectedPdf(path: string, fileName: string) {
- if (!import.meta.client) return
-
- printingDocument.value = true
-
- try {
- const blob = await $api<Blob>(path, {
- responseType: 'blob',
+function openProtectedPdf(path: string, fileName: string, title: string) {
+ openSecurePdf({
+ endpoint: path,
+ filename: fileName,
+ title,
+ description: 'Private sales document — review before printing, sharing, or downloading.',
+ errorFallback: `Could not open ${fileName}. Complete the invoice first, then try again.`,
  })
-
- const pdfBlob = blob instanceof Blob
- ? blob
- : new Blob([blob], { type: 'application/pdf' })
-
- const url = URL.createObjectURL(pdfBlob)
- const popup = window.open(url, '_blank', 'noopener,noreferrer')
-
- if (!popup) {
- showNotice('Popup blocked. Please allow popups for this site and try again.')
- URL.revokeObjectURL(url)
- return
- }
-
- setTimeout(() => {
- URL.revokeObjectURL(url)
- }, 60_000)
- } catch (error: any) {
- showNotice(extractApiErrorMessage(error, `Could not open ${fileName}. Complete the invoice first, then try again.`))
- } finally {
- printingDocument.value = false
- }
 }
 
 function printInvoicePdf(invoice: SaleInvoice) {
@@ -585,6 +563,7 @@ function printInvoicePdf(invoice: SaleInvoice) {
  return openProtectedPdf(
  `/admin/sale-invoices/${invoice.id}/pdf`,
  `sale-invoice-${invoice.invoice_number}.pdf`,
+ `Sales invoice ${invoice.invoice_number}`,
  )
 }
 
@@ -596,7 +575,8 @@ function printThermalReceipt(invoice: SaleInvoice, paper: '80' | '58' = '80') {
 
  return openProtectedPdf(
  `/admin/sale-invoices/${invoice.id}/thermal-receipt?paper=${paper}`,
- `thermal-receipt-${invoice.invoice_number}-${paper}mm.pdf`,
+ `sales-receipt-${invoice.invoice_number}-${paper}mm.pdf`,
+ `${paper}mm receipt ${invoice.invoice_number}`,
  )
 }
 
@@ -1358,7 +1338,7 @@ function nextPage() {
  </AppActionMenuItem>
 
  <AppActionMenuItem @click="printInvoicePdf(invoice); close()">
- Download PDF
+ Invoice PDF
  </AppActionMenuItem>
 
  <AppActionMenuItem danger @click="askDelete(invoice); close()">
@@ -1545,7 +1525,7 @@ function nextPage() {
  </AppActionMenuItem>
 
  <AppActionMenuItem @click="printInvoicePdf(invoice); close()">
- Download PDF
+ Invoice PDF
  </AppActionMenuItem>
 
  <AppActionMenuItem danger @click="askDelete(invoice); close()">

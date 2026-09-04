@@ -118,6 +118,7 @@ type ProductIndexResponse = {
 }
 
 const { $api } = useNuxtApp()
+const { openPdf: openSecurePdf, state: securePdfState } = useSecurePdf()
 
 const search = ref('')
 const debouncedSearch = ref('')
@@ -143,7 +144,7 @@ const selectedInvoice = ref<PurchaseInvoice | null>(null)
 const viewOpen = ref(false)
 const viewingInvoiceId = ref<number | null>(null)
 const viewedInvoice = ref<PurchaseInvoice | null>(null)
-const printingDocument = ref(false)
+const printingDocument = computed(() => securePdfState.value.status === 'loading')
 
 const receiveOpen = ref(false)
 const receiving = ref(false)
@@ -525,37 +526,19 @@ async function openView(invoice: PurchaseInvoice) {
  }
 }
 
-async function printPurchasePdf(invoice: PurchaseInvoice) {
+function printPurchasePdf(invoice: PurchaseInvoice) {
  if (invoice.status !== 'received') {
  showNotice('Receive this invoice before printing.')
  return
  }
 
- if (!import.meta.client) return
-
- printingDocument.value = true
-
- try {
- const blob = await $api<Blob>(`/admin/purchase-invoices/${invoice.id}/pdf`, {
- responseType: 'blob',
+ openSecurePdf({
+ endpoint: `/admin/purchase-invoices/${invoice.id}/pdf`,
+ filename: `purchase-invoice-${invoice.invoice_number}.pdf`,
+ title: `Purchase invoice ${invoice.invoice_number}`,
+ description: 'Private purchase document — review before printing, sharing, or downloading.',
+ errorFallback: 'Could not generate the purchase invoice PDF.',
  })
-
- const pdfBlob = blob instanceof Blob ? blob : new Blob([blob], { type: 'application/pdf' })
- const url = URL.createObjectURL(pdfBlob)
- const popup = window.open(url, '_blank', 'noopener,noreferrer')
-
- if (!popup) {
- showNotice('Popup blocked. Please allow popups for this site and try again.')
- URL.revokeObjectURL(url)
- return
- }
-
- setTimeout(() => URL.revokeObjectURL(url), 60_000)
- } catch (error: any) {
- showNotice(extractApiErrorMessage(error, 'Could not generate the purchase invoice PDF.'))
- } finally {
- printingDocument.value = false
- }
 }
 
 async function afterSaved(invoice: PurchaseInvoice, message?: string) {

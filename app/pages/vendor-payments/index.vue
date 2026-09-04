@@ -76,6 +76,7 @@ type PurchaseInvoiceIndexResponse = {
 }
 
 const { $api } = useNuxtApp()
+const { openPdf: openSecurePdf, state: securePdfState } = useSecurePdf()
 
 const search = ref('')
 const debouncedSearch = ref('')
@@ -104,6 +105,7 @@ const deleteOpen = ref(false)
 const deleting = ref(false)
 const deleteError = ref('')
 const paymentToDelete = ref<VendorPayment | null>(null)
+const printingDocument = computed(() => securePdfState.value.status === 'loading')
 
 const notice = ref('')
 const noticeTimer = ref<ReturnType<typeof setTimeout> | null>(null)
@@ -454,6 +456,21 @@ async function confirmDelete() {
  } finally {
  deleting.value = false
  }
+}
+
+function openReceipt(payment: VendorPayment) {
+ if (payment.status !== 'paid') {
+ showNotice('Mark this vendor payment as paid before opening its receipt.')
+ return
+ }
+
+ openSecurePdf({
+ endpoint: `/admin/vendor-payments/${payment.id}/pdf`,
+ filename: `vendor-payment-receipt-${payment.payment_number}.pdf`,
+ title: `Vendor payment ${payment.payment_number}`,
+ description: 'Private vendor payment receipt — review before printing, sharing, or downloading.',
+ errorFallback: 'Could not generate the vendor payment receipt.',
+ })
 }
 
 function clearFilters() {
@@ -855,11 +872,21 @@ function nextPage() {
 
  <td class="px-4 py-3 text-right">
  <div
- v-if="canDeletePayment(payment)"
  class="flex items-center justify-end gap-2"
  >
  <AppButton
- v-if="payment.status === 'draft'"
+ v-if="payment.status === 'paid'"
+ type="button"
+ variant="secondary"
+ size="sm"
+ :loading="printingDocument"
+ @click="openReceipt(payment)"
+ >
+ Receipt
+ </AppButton>
+
+ <AppButton
+ v-if="canDeletePayment(payment) && payment.status === 'draft'"
  type="button"
  size="sm"
  @click="askPay(payment)"
@@ -868,6 +895,7 @@ function nextPage() {
  </AppButton>
 
  <AppButton
+ v-if="canDeletePayment(payment)"
  type="button"
  variant="danger"
  size="sm"
@@ -878,7 +906,7 @@ function nextPage() {
  </div>
 
  <span
- v-else
+ v-if="payment.status !== 'paid' && !canDeletePayment(payment)"
  class="text-xs font-medium text-gray-400 dark:text-gray-500"
  >
  Invoice entry
@@ -921,6 +949,18 @@ function nextPage() {
  {{ payment.purchase_invoice?.invoice_number || 'Vendor balance' }}
  </AppBadge>
  </div>
+
+ <AppButton
+ v-if="payment.status === 'paid'"
+ class="mt-4 w-full"
+ type="button"
+ variant="secondary"
+ size="sm"
+ :loading="printingDocument"
+ @click="openReceipt(payment)"
+ >
+ Open receipt
+ </AppButton>
 
  <div
  v-if="canDeletePayment(payment)"

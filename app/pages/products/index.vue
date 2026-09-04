@@ -100,6 +100,7 @@ type CategoriesTreeResponse = {
 
 const { $api } = useNuxtApp()
 const { formatDateTime: formatAppDateTime } = useAppDateTime()
+const { openPdf: openSecurePdf, state: securePdfState } = useSecurePdf()
 
 const search = ref('')
 const debouncedSearch = ref('')
@@ -129,6 +130,13 @@ const noticeTimer = ref<ReturnType<typeof setTimeout> | null>(null)
 
 const printingProductId = ref<number | null>(null)
 const printingCardProductId = ref<number | null>(null)
+
+watch(() => securePdfState.value.status, (status) => {
+ if (status !== 'loading') {
+ printingProductId.value = null
+ printingCardProductId.value = null
+ }
+})
 
 const variantsPanelOpen = ref(false)
 const variantsPanelProduct = ref<Product | null>(null)
@@ -468,90 +476,37 @@ function showNotice(message: string) {
  }, 3000)
 }
 
-/**
- * With `responseType: 'blob'` set on a request, ofetch reads BOTH success
- * and error response bodies as a Blob — so on failure, `error.data` is a
- * Blob, not the parsed JSON `{ message: ... }` Laravel sent back, and the
- * real reason gets lost. This reads the blob back out as text and parses
- * it so the actual server message reaches the notice toast.
- */
-async function extractPdfErrorMessage(error: any, fallback: string): Promise<string> {
- const data = error?.data
-
- if (data instanceof Blob) {
- try {
- const parsed = JSON.parse(await data.text())
- return parsed?.message || fallback
- } catch {
- return fallback
- }
- }
-
- return data?.message || fallback
-}
-
 function openVariants(product: Product) {
  variantsPanelProduct.value = product
  variantsPanelOpen.value = true
 }
 
-async function openPdfInNewTab(path: string, errorFallback: string) {
- if (!import.meta.client) return
-
- try {
- const blob = await $api<Blob>(path, {
- responseType: 'blob',
- })
-
- const pdfBlob = blob instanceof Blob
- ? blob
- : new Blob([blob], { type: 'application/pdf' })
-
- const url = URL.createObjectURL(pdfBlob)
- const popup = window.open(url, '_blank', 'noopener,noreferrer')
-
- if (!popup) {
- showNotice('Popup blocked. Please allow popups for this site and try again.')
- URL.revokeObjectURL(url)
- return
- }
-
- setTimeout(() => {
- URL.revokeObjectURL(url)
- }, 60_000)
- } catch (error: any) {
- showNotice(await extractPdfErrorMessage(error, errorFallback))
- }
-}
-
-async function printProductTags(product: Product) {
+function printProductTags(product: Product) {
  if (printingProductId.value) return
 
  printingProductId.value = product.id
 
- try {
- await openPdfInNewTab(
- `/admin/products/${product.id}/labels`,
- 'Could not generate tags for this product. Make sure it has at least one active variant.',
- )
- } finally {
- printingProductId.value = null
- }
+ openSecurePdf({
+ endpoint: `/admin/products/${product.id}/labels`,
+ filename: `tags-${product.slug}.pdf`,
+ title: `Product tags — ${product.name}`,
+ description: 'Review the printable barcode labels before printing or downloading.',
+ errorFallback: 'Could not generate tags for this product. Make sure it has at least one active variant.',
+ })
 }
 
-async function printProductCards(product: Product) {
+function printProductCards(product: Product) {
  if (printingCardProductId.value) return
 
  printingCardProductId.value = product.id
 
- try {
- await openPdfInNewTab(
- `/admin/products/${product.id}/packaging-cards`,
- 'Could not generate packaging cards for this product. Make sure it has at least one active variant.',
- )
- } finally {
- printingCardProductId.value = null
- }
+ openSecurePdf({
+ endpoint: `/admin/products/${product.id}/packaging-cards`,
+ filename: `packaging-card-${product.slug}.pdf`,
+ title: `Packaging cards — ${product.name}`,
+ description: 'Review the printable packaging cards before printing or downloading.',
+ errorFallback: 'Could not generate packaging cards for this product. Make sure it has at least one active variant.',
+ })
 }
 
 async function fetchProduct(productId: number) {
