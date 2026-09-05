@@ -4,9 +4,11 @@ const props = withDefaults(defineProps<{
  title: string
  description?: string
  maxWidth?: string
+ fullScreen?: boolean
 }>(), {
  description: undefined,
  maxWidth: 'max-w-3xl',
+ fullScreen: false,
 })
 
 const emit = defineEmits<{
@@ -143,13 +145,10 @@ onBeforeUnmount(() => {
  class="
  absolute
  inset-0
-
- bg-gray-950/45
-
- backdrop-blur-[3px]
-
- dark:bg-black/60
  "
+ :class="fullScreen
+ ? 'bg-gray-950/45 backdrop-blur-md dark:bg-black/60'
+ : 'bg-gray-950/45 backdrop-blur-[3px] dark:bg-black/60'"
  @click="close"
  />
 
@@ -159,13 +158,10 @@ onBeforeUnmount(() => {
  z-10
 
  flex
- min-h-full
- items-end
+ h-full
  justify-center
-
- sm:items-center
- sm:p-3
  "
+ :class="fullScreen ? 'full-screen-shell items-center' : 'items-end sm:items-center sm:p-3'"
  >
  <Transition
  appear
@@ -201,16 +197,16 @@ onBeforeUnmount(() => {
  "
  >
  <section
+ role="dialog"
+ aria-modal="true"
+ :aria-label="title"
  class="
  relative
 
  flex
- max-h-[100dvh]
  w-full
  flex-col
  overflow-hidden
-
- rounded-t-[20px]
 
  bg-white
 
@@ -219,10 +215,10 @@ onBeforeUnmount(() => {
  dark:bg-[#111214]
  dark:shadow-[0_30px_90px_rgba(0,0,0,0.5)]
 
- sm:max-h-[calc(100dvh-24px)]
- sm:rounded-[20px]
  "
- :class="maxWidth"
+ :class="fullScreen
+ ? 'h-full max-h-full max-w-[1600px] rounded-[18px] sm:rounded-[22px]'
+ : `${maxWidth} max-h-[100dvh] rounded-t-[20px] sm:max-h-[calc(100dvh-24px)] sm:rounded-[20px]`"
  @click.stop
  >
  <!-- Header -->
@@ -334,12 +330,10 @@ onBeforeUnmount(() => {
  class="
  min-h-0
  flex-1
-
- overflow-y-auto
- overscroll-contain
-
- [scrollbar-gutter:stable]
  "
+ :class="fullScreen
+ ? 'overflow-hidden'
+ : 'overflow-y-auto overscroll-contain [scrollbar-gutter:stable]'"
  >
  <slot />
  </div>
@@ -374,3 +368,33 @@ onBeforeUnmount(() => {
  </Transition>
  </Teleport>
 </template>
+
+<style scoped>
+.full-screen-shell {
+ padding:
+ max(0.5rem, env(safe-area-inset-top))
+ max(0.5rem, env(safe-area-inset-right))
+ max(0.5rem, env(safe-area-inset-bottom))
+ max(0.5rem, env(safe-area-inset-left));
+}
+
+@media (min-width: 640px) {
+ .full-screen-shell {
+  padding:
+  max(1rem, env(safe-area-inset-top))
+  max(1rem, env(safe-area-inset-right))
+  max(1rem, env(safe-area-inset-bottom))
+  max(1rem, env(safe-area-inset-left));
+ }
+}
+
+@media (min-width: 1024px) {
+ .full-screen-shell {
+  padding:
+  max(1.5rem, env(safe-area-inset-top))
+  max(1.5rem, env(safe-area-inset-right))
+  max(1.5rem, env(safe-area-inset-bottom))
+  max(1.5rem, env(safe-area-inset-left));
+ }
+}
+</style>

@@ -1,40 +1,132 @@
 <script setup lang="ts">
 import pdfWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
+import type {
+  PdfMarkupMode,
+  PdfMarkupPoint,
+  PdfMarkupStroke,
+} from '~/utils/pdfMarkup'
 
-const props = defineProps<{
+type ViewerTool = 'view' | PdfMarkupMode | 'eraser'
+
+type ScreenStroke = PdfMarkupStroke & {
+  screenPoints: Array<{ x: number, y: number }>
+  pointList: string
+  screenWidth: number
+}
+
+const props = withDefaults(defineProps<{
   file: File
-}>()
+  disabled?: boolean
+}>(), {
+  disabled: false,
+})
+
+const strokes = defineModel<PdfMarkupStroke[]>({ default: () => [] })
 
 const emit = defineEmits<{
   ready: []
   error: [message: string]
 }>()
 
+const PEN_COLORS = ['#111827', '#dc2626', '#2563eb'] as const
+const HIGHLIGHT_COLORS = ['#facc15', '#fb7185', '#4ade80'] as const
+const TOOL_OPTIONS = [
+  { value: 'view', label: 'View' },
+  { value: 'pen', label: 'Pen' },
+  { value: 'highlight', label: 'Mark' },
+  { value: 'eraser', label: 'Erase' },
+] as const
+const MAX_POINTS_PER_STROKE = 2_000
+const MAX_STROKES = 500
+const MAX_HISTORY = 40
+
 const viewportElement = ref<HTMLDivElement | null>(null)
 const canvasElement = ref<HTMLCanvasElement | null>(null)
+const overlayElement = ref<SVGSVGElement | null>(null)
 const pageNumber = ref(1)
 const pageCount = ref(0)
 const zoom = ref(1)
 const loading = ref(true)
 const rendering = ref(false)
 const viewerError = ref('')
+const displayWidth = ref(0)
+const displayHeight = ref(0)
+const viewportVersion = ref(0)
+const tool = ref<ViewerTool>('view')
+const penColor = ref<string>(PEN_COLORS[1])
+const highlightColor = ref<string>(HIGHLIGHT_COLORS[0])
+const activeStroke = ref<PdfMarkupStroke | null>(null)
+const history = shallowRef<PdfMarkupStroke[][]>([])
 
 let pdfDocument: any = null
 let loadingTask: any = null
 let renderTask: any = null
+let cssViewport: any = null
 let resizeObserver: ResizeObserver | null = null
 let resizeFrame: number | null = null
 let generation = 0
 let renderGeneration = 0
+let activePointerId: number | null = null
+let eraserSnapshot: PdfMarkupStroke[] | null = null
+let eraserChanged = false
 
 const zoomLabel = computed(() => `${Math.round(zoom.value * 100)}%`)
 const canGoBack = computed(() => pageNumber.value > 1)
 const canGoForward = computed(() => pageNumber.value < pageCount.value)
+const canUndo = computed(() => history.value.length > 0)
+const currentPageHasMarkup = computed(() => strokes.value.some(stroke => stroke.page === pageNumber.value))
+const markupCount = computed(() => strokes.value.length)
+const colourOptions = computed<readonly string[]>(() => (
+  tool.value === 'highlight' ? HIGHLIGHT_COLORS : PEN_COLORS
+))
+const selectedColour = computed(() => (
+  tool.value === 'highlight' ? highlightColor.value : penColor.value
+))
+const overlayCursor = computed(() => {
+  if (props.disabled) return 'wait'
+  if (tool.value === 'eraser') return 'cell'
+  if (tool.value === 'pen' || tool.value === 'highlight') return 'crosshair'
+  return 'default'
+})
+
+const screenStrokes = computed<ScreenStroke[]>(() => {
+  viewportVersion.value
+  if (!cssViewport) return []
+
+  const pageStrokes = strokes.value.filter(stroke => stroke.page === pageNumber.value)
+  if (activeStroke.value?.page === pageNumber.value) pageStrokes.push(activeStroke.value)
+
+  return pageStrokes.map((stroke) => {
+    const screenPoints = stroke.points.map((point) => {
+      const [x, y] = cssViewport.convertToViewportPoint(point.x, point.y)
+      return { x, y }
+    })
+
+    return {
+      ...stroke,
+      screenPoints,
+      pointList: screenPoints.map(point => `${point.x},${point.y}`).join(' '),
+      screenWidth: Math.max(1, stroke.width * Math.abs(Number(cssViewport.scale) || 1)),
+    }
+  })
+})
 
 watch(
   () => props.file,
-  () => { void loadDocument() },
+  () => {
+    history.value = []
+    cancelMarkup()
+    tool.value = 'view'
+    void loadDocument()
+  },
   { immediate: true },
+)
+
+watch(
+  () => props.disabled,
+  (disabled) => {
+    if (disabled) finishMarkup()
+  },
 )
 
 onMounted(() => {
@@ -47,6 +139,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   generation++
   renderGeneration++
+  cancelMarkup()
   resizeObserver?.disconnect()
   resizeObserver = null
 
@@ -58,6 +151,7 @@ onBeforeUnmount(() => {
   void loadingTask?.destroy?.()
   loadingTask = null
   pdfDocument = null
+  cssViewport = null
 
   if (canvasElement.value) {
     canvasElement.value.width = 0
@@ -84,18 +178,18 @@ async function loadDocument() {
   void loadingTask?.destroy?.()
   loadingTask = null
   pdfDocument = null
+  cssViewport = null
 
   pageNumber.value = 1
   pageCount.value = 0
   zoom.value = 1
+  displayWidth.value = 0
+  displayHeight.value = 0
   loading.value = true
   rendering.value = false
   viewerError.value = ''
 
   try {
-    // Mozilla's legacy bundle is translated/polyfilled for a wider Safari
-    // range. It remains lazy-loaded, so normal backoffice screens do not pay
-    // the renderer cost until an administrator opens a PDF.
     const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs')
     if (activeGeneration !== generation) return
 
@@ -106,8 +200,6 @@ async function loadDocument() {
 
     loadingTask = pdfjs.getDocument({
       data: bytes,
-      // Invoices do not need PDF-embedded JavaScript. Keeping eval disabled
-      // narrows the parser surface for documents containing unexpected data.
       isEvalSupported: false,
       useSystemFonts: true,
     })
@@ -159,13 +251,20 @@ async function renderCurrentPage(activeGeneration = generation) {
       || naturalViewport.height <= 0
     ) throw new Error('The PDF page has invalid dimensions.')
 
-    const availableWidth = Math.max(180, viewport.clientWidth - 32)
-    const fitWidthScale = availableWidth / naturalViewport.width
-    const cssScale = Math.max(Number.EPSILON, fitWidthScale * zoom.value)
+    const viewportStyle = window.getComputedStyle(viewport)
+    const horizontalPadding = (Number.parseFloat(viewportStyle.paddingLeft) || 0)
+      + (Number.parseFloat(viewportStyle.paddingRight) || 0)
+    const verticalPadding = (Number.parseFloat(viewportStyle.paddingTop) || 0)
+      + (Number.parseFloat(viewportStyle.paddingBottom) || 0)
+    const availableWidth = Math.max(1, viewport.clientWidth - horizontalPadding)
+    const availableHeight = Math.max(1, viewport.clientHeight - verticalPadding)
+    const fitPageScale = Math.min(
+      availableWidth / naturalViewport.width,
+      availableHeight / naturalViewport.height,
+    )
+    const cssScale = Math.max(Number.EPSILON, fitPageScale * zoom.value)
     const displayViewport = page.getViewport({ scale: cssScale })
 
-    // Keep canvases sharp without crossing iPhone/Safari canvas limits on
-    // unusually long thermal receipts or highly zoomed pages.
     const deviceScale = Math.min(window.devicePixelRatio || 1, 2)
     const maxPixels = 12_000_000
     const maxDimension = 8192
@@ -182,6 +281,11 @@ async function renderCurrentPage(activeGeneration = generation) {
     canvas.height = Math.max(1, Math.floor(renderViewport.height))
     canvas.style.width = `${Math.floor(displayViewport.width)}px`
     canvas.style.height = `${Math.floor(displayViewport.height)}px`
+
+    displayWidth.value = Math.floor(displayViewport.width)
+    displayHeight.value = Math.floor(displayViewport.height)
+    cssViewport = displayViewport
+    viewportVersion.value++
 
     const context = canvas.getContext('2d', { alpha: false })
     if (!context) throw new Error('Canvas rendering is unavailable.')
@@ -218,6 +322,7 @@ async function renderCurrentPage(activeGeneration = generation) {
 }
 
 function changePage(direction: -1 | 1) {
+  finishMarkup()
   const nextPage = Math.min(pageCount.value, Math.max(1, pageNumber.value + direction))
   if (nextPage === pageNumber.value) return
 
@@ -227,41 +332,277 @@ function changePage(direction: -1 | 1) {
 }
 
 function changeZoom(amount: number) {
+  finishMarkup()
   zoom.value = Math.min(2.5, Math.max(0.6, Number((zoom.value + amount).toFixed(2))))
   scheduleRender()
 }
 
-function fitWidth() {
+function fitPage() {
+  finishMarkup()
   zoom.value = 1
   scheduleRender()
-  viewportElement.value?.scrollTo({ left: 0, behavior: 'smooth' })
+  viewportElement.value?.scrollTo({ top: 0, left: 0, behavior: 'smooth' })
+}
+
+function selectTool(nextTool: ViewerTool) {
+  if (props.disabled) return
+  finishMarkup()
+  tool.value = nextTool
+}
+
+function selectColour(colour: string) {
+  if (tool.value === 'highlight') highlightColor.value = colour
+  else penColor.value = colour
+}
+
+function strokeId() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+
+  return `markup-${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
+
+function pointFromEvent(event: PointerEvent): PdfMarkupPoint | null {
+  const overlay = overlayElement.value
+  if (!overlay || !cssViewport || displayWidth.value <= 0 || displayHeight.value <= 0) return null
+
+  const rect = overlay.getBoundingClientRect()
+  if (rect.width <= 0 || rect.height <= 0) return null
+
+  const viewportX = Math.min(
+    displayWidth.value,
+    Math.max(0, (event.clientX - rect.left) * (displayWidth.value / rect.width)),
+  )
+  const viewportY = Math.min(
+    displayHeight.value,
+    Math.max(0, (event.clientY - rect.top) * (displayHeight.value / rect.height)),
+  )
+  const [x, y] = cssViewport.convertToPdfPoint(viewportX, viewportY)
+
+  return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null
+}
+
+function pointDistanceOnScreen(first: PdfMarkupPoint, second: PdfMarkupPoint) {
+  if (!cssViewport) return Number.POSITIVE_INFINITY
+  const [firstX, firstY] = cssViewport.convertToViewportPoint(first.x, first.y)
+  const [secondX, secondY] = cssViewport.convertToViewportPoint(second.x, second.y)
+  return Math.hypot(firstX - secondX, firstY - secondY)
+}
+
+function beginMarkup(event: PointerEvent) {
+  if (props.disabled || tool.value === 'view' || !cssViewport) return
+  if (activePointerId !== null) return
+  if (event.pointerType === 'mouse' && event.button !== 0) return
+
+  const point = pointFromEvent(event)
+  if (!point) return
+
+  if (tool.value !== 'eraser' && strokes.value.length >= MAX_STROKES) {
+    return
+  }
+
+  event.preventDefault()
+  activePointerId = event.pointerId
+  overlayElement.value?.setPointerCapture(event.pointerId)
+
+  if (tool.value === 'eraser') {
+    eraserSnapshot = strokes.value
+    eraserChanged = false
+    eraseAt(point)
+    return
+  }
+
+  const screenWidth = tool.value === 'highlight' ? 14 : 3
+  const pdfWidth = screenWidth / Math.max(Number.EPSILON, Math.abs(Number(cssViewport.scale) || 1))
+
+  activeStroke.value = {
+    id: strokeId(),
+    page: pageNumber.value,
+    mode: tool.value,
+    color: tool.value === 'highlight' ? highlightColor.value : penColor.value,
+    opacity: tool.value === 'highlight' ? 0.32 : 0.94,
+    width: pdfWidth,
+    points: [point],
+  }
+}
+
+function continueMarkup(event: PointerEvent) {
+  if (event.pointerId !== activePointerId || props.disabled) return
+  const point = pointFromEvent(event)
+  if (!point) return
+
+  event.preventDefault()
+
+  if (tool.value === 'eraser') {
+    eraseAt(point)
+    return
+  }
+
+  const stroke = activeStroke.value
+  const previousPoint = stroke?.points[stroke.points.length - 1]
+  if (!stroke || !previousPoint || stroke.points.length >= MAX_POINTS_PER_STROKE) return
+  if (pointDistanceOnScreen(previousPoint, point) < 1.4) return
+
+  activeStroke.value = {
+    ...stroke,
+    points: [...stroke.points, point],
+  }
+}
+
+function finishMarkup(event?: PointerEvent) {
+  if (event && activePointerId !== null && event.pointerId !== activePointerId) return
+
+  const pointerId = activePointerId
+  activePointerId = null
+
+  if (pointerId !== null) {
+    try {
+      overlayElement.value?.releasePointerCapture(pointerId)
+    } catch {
+      // The browser may already have released capture after leaving the page.
+    }
+  }
+
+  if (activeStroke.value?.points.length) {
+    const previous = strokes.value
+    pushHistory(previous)
+    strokes.value = [...previous, activeStroke.value]
+  } else if (eraserChanged && eraserSnapshot) {
+    pushHistory(eraserSnapshot)
+  }
+
+  activeStroke.value = null
+  eraserSnapshot = null
+  eraserChanged = false
+}
+
+function cancelMarkup() {
+  const pointerId = activePointerId
+  activePointerId = null
+
+  if (pointerId !== null) {
+    try {
+      overlayElement.value?.releasePointerCapture(pointerId)
+    } catch {
+      // Pointer capture may already be gone after a browser cancellation.
+    }
+  }
+
+  if (tool.value === 'eraser' && eraserChanged && eraserSnapshot) {
+    strokes.value = eraserSnapshot
+  }
+
+  activeStroke.value = null
+  eraserSnapshot = null
+  eraserChanged = false
+}
+
+function pushHistory(snapshot: PdfMarkupStroke[]) {
+  history.value = [...history.value, snapshot].slice(-MAX_HISTORY)
+}
+
+function undoMarkup() {
+  finishMarkup()
+  const previous = history.value[history.value.length - 1]
+  if (!previous) return
+
+  history.value = history.value.slice(0, -1)
+  strokes.value = previous
+}
+
+function clearCurrentPage() {
+  finishMarkup()
+  if (!currentPageHasMarkup.value) return
+
+  const previous = strokes.value
+  pushHistory(previous)
+  strokes.value = previous.filter(stroke => stroke.page !== pageNumber.value)
+}
+
+function eraseAt(point: PdfMarkupPoint) {
+  const strokeIdToRemove = findStrokeAt(point)
+  if (!strokeIdToRemove) return
+
+  strokes.value = strokes.value.filter(stroke => stroke.id !== strokeIdToRemove)
+  eraserChanged = true
+}
+
+function findStrokeAt(point: PdfMarkupPoint) {
+  if (!cssViewport) return null
+  const [pointerX, pointerY] = cssViewport.convertToViewportPoint(point.x, point.y)
+  const pageStrokes = strokes.value.filter(stroke => stroke.page === pageNumber.value)
+
+  for (let strokeIndex = pageStrokes.length - 1; strokeIndex >= 0; strokeIndex--) {
+    const stroke = pageStrokes[strokeIndex]
+    const points = stroke.points.map((strokePoint) => {
+      const [x, y] = cssViewport.convertToViewportPoint(strokePoint.x, strokePoint.y)
+      return { x, y }
+    })
+    const screenWidth = stroke.width * Math.abs(Number(cssViewport.scale) || 1)
+    const threshold = Math.max(10, screenWidth / 2 + 6)
+
+    if (points.length === 1 && Math.hypot(pointerX - points[0].x, pointerY - points[0].y) <= threshold) {
+      return stroke.id
+    }
+
+    for (let pointIndex = 1; pointIndex < points.length; pointIndex++) {
+      if (distanceToSegment(pointerX, pointerY, points[pointIndex - 1], points[pointIndex]) <= threshold) {
+        return stroke.id
+      }
+    }
+  }
+
+  return null
+}
+
+function distanceToSegment(
+  x: number,
+  y: number,
+  start: { x: number, y: number },
+  end: { x: number, y: number },
+) {
+  const deltaX = end.x - start.x
+  const deltaY = end.y - start.y
+  const lengthSquared = deltaX * deltaX + deltaY * deltaY
+
+  if (lengthSquared === 0) return Math.hypot(x - start.x, y - start.y)
+
+  const position = Math.min(1, Math.max(0, (
+    (x - start.x) * deltaX + (y - start.y) * deltaY
+  ) / lengthSquared))
+
+  return Math.hypot(
+    x - (start.x + position * deltaX),
+    y - (start.y + position * deltaY),
+  )
 }
 </script>
 
 <template>
   <section
-    class="overflow-hidden rounded-[16px] bg-gray-950/[0.035] dark:bg-white/[0.04]"
+    class="flex h-full min-h-0 flex-col overflow-hidden bg-gray-950/[0.035] dark:bg-white/[0.04]"
     aria-label="PDF document viewer"
     @keydown.left.prevent="changePage(-1)"
     @keydown.right.prevent="changePage(1)"
   >
-    <div class="flex min-h-11 flex-wrap items-center justify-between gap-2 bg-white/90 px-2.5 py-2 shadow-[0_1px_0_rgba(17,24,39,0.06)] backdrop-blur-xl dark:bg-[#17181b]/90 dark:shadow-[0_1px_0_rgba(255,255,255,0.06)]">
-      <div class="flex items-center gap-1.5">
+    <div class="flex shrink-0 flex-wrap items-center justify-between gap-2 bg-white/90 px-2.5 py-2 shadow-[0_1px_0_rgba(17,24,39,0.06)] backdrop-blur-xl dark:bg-[#17181b]/90 dark:shadow-[0_1px_0_rgba(255,255,255,0.06)]">
+      <div class="flex items-center gap-1">
         <button
           type="button"
-          :disabled="!canGoBack || rendering"
+          :disabled="!canGoBack || rendering || disabled"
           class="inline-flex h-8 w-8 items-center justify-center rounded-[9px] text-gray-500 transition hover:bg-gray-950/[0.06] hover:text-gray-950 disabled:opacity-30 dark:text-gray-400 dark:hover:bg-white/[0.08] dark:hover:text-white"
           aria-label="Previous PDF page"
           @click="changePage(-1)"
         >
           <svg viewBox="0 0 20 20" class="h-4 w-4" fill="none" aria-hidden="true"><path d="m12 5-5 5 5 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></svg>
         </button>
-        <span class="min-w-[72px] text-center text-[11px] font-medium tabular-nums text-gray-500 dark:text-gray-400">
+        <span class="min-w-[64px] text-center text-[11px] font-medium tabular-nums text-gray-500 dark:text-gray-400">
           {{ pageCount ? `${pageNumber} / ${pageCount}` : '— / —' }}
         </span>
         <button
           type="button"
-          :disabled="!canGoForward || rendering"
+          :disabled="!canGoForward || rendering || disabled"
           class="inline-flex h-8 w-8 items-center justify-center rounded-[9px] text-gray-500 transition hover:bg-gray-950/[0.06] hover:text-gray-950 disabled:opacity-30 dark:text-gray-400 dark:hover:bg-white/[0.08] dark:hover:text-white"
           aria-label="Next PDF page"
           @click="changePage(1)"
@@ -270,25 +611,79 @@ function fitWidth() {
         </button>
       </div>
 
-      <div class="flex items-center gap-1.5">
+      <div class="order-3 flex w-full items-center gap-1 overflow-x-auto rounded-[10px] bg-gray-950/[0.035] p-1 sm:order-none sm:w-auto dark:bg-white/[0.05]" role="toolbar" aria-label="PDF markup tools">
+        <button
+          v-for="option in TOOL_OPTIONS"
+          :key="option.value"
+          type="button"
+          :aria-pressed="tool === option.value"
+          :disabled="disabled"
+          class="h-8 shrink-0 rounded-[8px] px-3 text-[10px] font-semibold transition disabled:opacity-40"
+          :class="tool === option.value
+            ? 'bg-gray-950 text-white shadow-sm dark:bg-white dark:text-gray-950'
+            : 'text-gray-500 hover:bg-white/80 hover:text-gray-950 dark:text-gray-400 dark:hover:bg-white/[0.08] dark:hover:text-white'"
+          @click="selectTool(option.value)"
+        >
+          {{ option.label }}
+        </button>
+
+        <template v-if="tool === 'pen' || tool === 'highlight'">
+          <div class="mx-1 h-5 w-px shrink-0 bg-gray-300/70 dark:bg-white/10" />
+          <button
+            v-for="colour in colourOptions"
+            :key="colour"
+            type="button"
+            :aria-label="`Use ${colour} markup colour`"
+            :aria-pressed="selectedColour === colour"
+            class="h-6 w-6 shrink-0 rounded-full border-2 transition"
+            :class="selectedColour === colour ? 'scale-105 border-gray-950 dark:border-white' : 'border-transparent opacity-65 hover:opacity-100'"
+            :style="{ backgroundColor: colour }"
+            @click="selectColour(colour)"
+          />
+        </template>
+
+        <div class="mx-1 h-5 w-px shrink-0 bg-gray-300/70 dark:bg-white/10" />
         <button
           type="button"
-          :disabled="zoom <= 0.6 || rendering"
+          :disabled="!canUndo || disabled"
+          class="h-8 shrink-0 rounded-[8px] px-2.5 text-[10px] font-semibold text-gray-500 transition hover:bg-white/80 hover:text-gray-950 disabled:opacity-30 dark:text-gray-400 dark:hover:bg-white/[0.08] dark:hover:text-white"
+          @click="undoMarkup"
+        >
+          Undo
+        </button>
+        <button
+          type="button"
+          :disabled="!currentPageHasMarkup || disabled"
+          class="h-8 shrink-0 rounded-[8px] px-2.5 text-[10px] font-semibold text-gray-500 transition hover:bg-red-500/[0.08] hover:text-red-600 disabled:opacity-30 dark:text-gray-400 dark:hover:text-red-300"
+          @click="clearCurrentPage"
+        >
+          Clear page
+        </button>
+      </div>
+
+      <div class="flex items-center gap-1">
+        <span v-if="markupCount" class="mr-1 hidden rounded-full bg-amber-400/15 px-2 py-1 text-[9px] font-semibold text-amber-700 sm:inline-flex dark:text-amber-300">
+          {{ markupCount }} {{ markupCount === 1 ? 'mark' : 'marks' }}
+        </span>
+        <button
+          type="button"
+          :disabled="zoom <= 0.6 || rendering || disabled"
           class="inline-flex h-8 w-8 items-center justify-center rounded-[9px] text-[18px] font-light text-gray-500 transition hover:bg-gray-950/[0.06] hover:text-gray-950 disabled:opacity-30 dark:text-gray-400 dark:hover:bg-white/[0.08] dark:hover:text-white"
           aria-label="Zoom out"
           @click="changeZoom(-0.15)"
         >−</button>
         <button
           type="button"
-          class="h-8 min-w-[76px] rounded-[9px] px-2 text-[10px] font-semibold text-gray-600 transition hover:bg-gray-950/[0.06] hover:text-gray-950 dark:text-gray-300 dark:hover:bg-white/[0.08] dark:hover:text-white"
-          title="Fit PDF to viewer width"
-          @click="fitWidth"
+          :disabled="disabled"
+          class="h-8 min-w-[70px] rounded-[9px] px-2 text-[10px] font-semibold text-gray-600 transition hover:bg-gray-950/[0.06] hover:text-gray-950 disabled:opacity-40 dark:text-gray-300 dark:hover:bg-white/[0.08] dark:hover:text-white"
+          title="Fit the complete PDF page inside the viewer"
+          @click="fitPage"
         >
-          {{ zoom === 1 ? 'Fit width' : zoomLabel }}
+          {{ zoom === 1 ? 'Fit page' : zoomLabel }}
         </button>
         <button
           type="button"
-          :disabled="zoom >= 2.5 || rendering"
+          :disabled="zoom >= 2.5 || rendering || disabled"
           class="inline-flex h-8 w-8 items-center justify-center rounded-[9px] text-[18px] font-light text-gray-500 transition hover:bg-gray-950/[0.06] hover:text-gray-950 disabled:opacity-30 dark:text-gray-400 dark:hover:bg-white/[0.08] dark:hover:text-white"
           aria-label="Zoom in"
           @click="changeZoom(0.15)"
@@ -297,30 +692,76 @@ function fitWidth() {
     </div>
 
     <div
+      v-if="tool !== 'view'"
+      class="shrink-0 bg-amber-400/10 px-3 py-1.5 text-center text-[10px] font-medium text-amber-800 dark:text-amber-200"
+    >
+      {{ tool === 'eraser' ? 'Drag over a mark to erase it.' : 'Draw with your finger, Pencil, or pointer. Switch to View to scroll.' }}
+    </div>
+
+    <div
       ref="viewportElement"
       tabindex="0"
-      class="relative h-[54dvh] min-h-[350px] overflow-auto overscroll-contain p-4 outline-none sm:h-[62dvh]"
+      class="relative min-h-0 flex-1 overflow-auto overscroll-contain p-2 outline-none sm:p-4"
     >
-      <div v-if="loading" class="absolute inset-0 z-10 flex items-center justify-center bg-gray-100/90 dark:bg-[#17181b]/90">
+      <div v-if="loading" class="absolute inset-0 z-20 flex items-center justify-center bg-gray-100/90 dark:bg-[#17181b]/90">
         <div class="text-center">
           <span class="mx-auto block h-6 w-6 animate-spin rounded-full border-2 border-gray-300 border-t-gray-900 dark:border-white/15 dark:border-t-white" />
           <p class="mt-3 text-[11px] font-medium text-gray-500 dark:text-gray-400">Fitting document to your screen…</p>
         </div>
       </div>
 
-      <div v-if="viewerError" class="absolute inset-0 z-10 flex items-center justify-center bg-gray-100/95 px-6 text-center dark:bg-[#17181b]/95">
+      <div v-if="viewerError" class="absolute inset-0 z-20 flex items-center justify-center bg-gray-100/95 px-6 text-center dark:bg-[#17181b]/95">
         <p class="max-w-sm text-[12px] leading-5 text-red-600 dark:text-red-300">{{ viewerError }}</p>
       </div>
 
-      <div class="flex min-h-full min-w-full items-start justify-center">
-        <div class="relative shrink-0">
+      <div class="flex min-h-full min-w-full">
+        <div class="relative m-auto shrink-0">
           <canvas
             ref="canvasElement"
             class="block bg-white shadow-[0_12px_38px_rgba(15,23,42,0.14)]"
             role="img"
             :aria-label="`PDF page ${pageNumber} of ${pageCount || 1}`"
           />
-          <div v-if="rendering && !loading" class="absolute inset-0 flex items-center justify-center bg-white/55 backdrop-blur-[1px]">
+
+          <svg
+            v-if="displayWidth && displayHeight"
+            ref="overlayElement"
+            class="absolute inset-0 z-10 h-full w-full select-none"
+            :class="tool === 'view' ? 'pointer-events-none' : 'pointer-events-auto touch-none'"
+            :style="{ cursor: overlayCursor }"
+            :viewBox="`0 0 ${displayWidth} ${displayHeight}`"
+            preserveAspectRatio="none"
+            aria-label="PDF markup surface"
+            @pointerdown="beginMarkup"
+            @pointermove="continueMarkup"
+            @pointerup="finishMarkup"
+            @pointercancel="cancelMarkup"
+          >
+            <template v-for="stroke in screenStrokes" :key="stroke.id">
+              <circle
+                v-if="stroke.screenPoints.length === 1"
+                :cx="stroke.screenPoints[0].x"
+                :cy="stroke.screenPoints[0].y"
+                :r="stroke.screenWidth / 2"
+                :fill="stroke.color"
+                :fill-opacity="stroke.opacity"
+                :style="stroke.mode === 'highlight' ? { mixBlendMode: 'multiply' } : undefined"
+              />
+              <polyline
+                v-else
+                :points="stroke.pointList"
+                fill="none"
+                :stroke="stroke.color"
+                :stroke-opacity="stroke.opacity"
+                :stroke-width="stroke.screenWidth"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                :style="stroke.mode === 'highlight' ? { mixBlendMode: 'multiply' } : undefined"
+              />
+            </template>
+          </svg>
+
+          <div v-if="rendering && !loading" class="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-white/55 backdrop-blur-[1px]">
             <span class="h-5 w-5 animate-spin rounded-full border-2 border-gray-300 border-t-gray-900" />
           </div>
         </div>
