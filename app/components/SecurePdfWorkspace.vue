@@ -420,61 +420,136 @@ function onPreviewError(message: string) {
   <AppModal
     :open="state.open"
     :title="request?.title || 'PDF document'"
-    :description="request?.description || 'Private document — review, mark, print, share, or download it.'"
     full-screen
+    hide-header
     @close="close"
   >
-    <div class="flex h-full min-h-0 flex-col p-2 sm:p-3">
-      <div class="mb-2 flex shrink-0 flex-wrap items-center justify-between gap-2 px-1">
-        <div class="flex min-w-0 flex-wrap items-center gap-2">
-          <span class="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/[0.08] px-2.5 py-1 text-[11px] font-medium text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300">
-            <span class="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-            Session protected
-          </span>
-          <span class="text-[11px] text-gray-400 dark:text-gray-500">Not stored in browser cache</span>
-          <span v-if="markupCount" class="rounded-full bg-amber-400/15 px-2.5 py-1 text-[10px] font-semibold text-amber-700 dark:text-amber-300">
-            {{ markupCount }} {{ markupCount === 1 ? 'mark' : 'marks' }} included on export
-          </span>
-        </div>
+    <div class="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] lg:grid-cols-[minmax(0,1fr)_360px] lg:grid-rows-1 xl:grid-cols-[minmax(0,1fr)_400px]">
+      <aside class="relative z-10 flex max-h-[42dvh] min-h-0 flex-col overflow-hidden bg-white/95 shadow-[0_8px_28px_rgba(15,23,42,0.1)] backdrop-blur-xl dark:bg-[#111214]/95 dark:shadow-[0_8px_28px_rgba(0,0,0,0.35)] lg:col-start-2 lg:row-start-1 lg:max-h-none lg:shadow-[-1px_0_0_rgba(17,24,39,0.08)] dark:lg:shadow-[-1px_0_0_rgba(255,255,255,0.07)]">
+        <div class="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain p-3 sm:p-4 lg:p-6">
+          <div class="flex items-start justify-between gap-3">
+            <div class="min-w-0">
+              <p class="text-[9px] font-semibold uppercase tracking-[0.18em] text-gray-400 dark:text-gray-500">Private document</p>
+              <h2 class="mt-1.5 truncate text-[18px] font-semibold tracking-[-0.025em] text-gray-950 dark:text-white lg:mt-2 lg:text-[22px]">
+                {{ request?.title || 'PDF document' }}
+              </h2>
+              <p class="mt-2 hidden text-[12px] leading-5 text-gray-400 dark:text-gray-500 sm:block">
+                {{ request?.description || 'Review, mark, print, share, or download this document.' }}
+              </p>
+            </div>
 
-        <div v-if="pdfFile" class="min-w-0 text-right">
-          <p class="max-w-[420px] truncate text-[11px] font-medium text-gray-600 dark:text-gray-300">{{ displayedFilename }}</p>
-          <p class="mt-0.5 text-[10px] text-gray-400 dark:text-gray-600">{{ fileSize }}</p>
-        </div>
-      </div>
-
-      <div
-        v-if="state.status === 'loading'"
-        class="flex min-h-0 flex-1 items-center justify-center bg-gray-950/[0.025] dark:bg-white/[0.035]"
-      >
-        <div class="max-w-sm px-6 text-center">
-          <span class="mx-auto block h-7 w-7 animate-spin rounded-full border-2 border-gray-300 border-t-gray-900 dark:border-white/15 dark:border-t-white" />
-          <p class="mt-4 text-[13px] font-semibold text-gray-800 dark:text-gray-200">Preparing secure PDF…</p>
-          <p class="mt-1.5 text-[12px] leading-5 text-gray-400 dark:text-gray-500">The document stays inside your authenticated session.</p>
-        </div>
-      </div>
-
-      <div
-        v-else-if="state.status === 'error'"
-        class="flex min-h-0 flex-1 items-center justify-center bg-red-500/[0.045] px-6 text-center dark:bg-red-500/[0.07]"
-      >
-        <div class="max-w-md">
-          <div class="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-red-500/10 text-red-600 dark:text-red-300">
-            <AppNavIcon name="document" :size="20" />
+            <button
+              type="button"
+              aria-label="Close PDF workspace"
+              class="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] text-gray-400 transition hover:bg-gray-950/[0.05] hover:text-gray-900 active:scale-95 dark:text-gray-500 dark:hover:bg-white/[0.07] dark:hover:text-white"
+              @click="close"
+            >
+              <svg class="h-4 w-4" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                <path d="M5 5l10 10M15 5 5 15" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+              </svg>
+            </button>
           </div>
-          <p class="mt-3 text-[13px] font-semibold text-red-700 dark:text-red-300">PDF could not be prepared</p>
-          <p class="mt-1.5 text-[12px] leading-5 text-red-600/80 dark:text-red-300/75">{{ errorMessage }}</p>
-          <AppButton class="mt-4" variant="secondary" size="sm" @click="loadPdf">Try again</AppButton>
-        </div>
-      </div>
 
-      <div v-else-if="state.status === 'ready' && objectUrl" class="flex min-h-0 flex-1 flex-col">
+          <div class="mt-3 grid grid-cols-2 gap-2 lg:mt-6 lg:grid-cols-1">
+            <div class="rounded-[12px] bg-emerald-500/[0.07] px-3 py-2.5 dark:bg-emerald-500/[0.09]">
+              <p class="flex items-center gap-2 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300">
+                <span class="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                Session protected
+              </p>
+              <p class="mt-1 hidden text-[10px] leading-4 text-emerald-700/65 dark:text-emerald-300/60 lg:block">
+                Loaded through your authenticated session and not stored in browser cache.
+              </p>
+            </div>
+
+            <div class="min-w-0 rounded-[12px] bg-gray-950/[0.035] px-3 py-2.5 dark:bg-white/[0.045]">
+              <p class="text-[9px] font-semibold uppercase tracking-[0.12em] text-gray-400 dark:text-gray-500">File</p>
+              <p class="mt-1 truncate text-[11px] font-semibold text-gray-700 dark:text-gray-300">
+                {{ displayedFilename || 'Preparing document…' }}
+              </p>
+              <p class="mt-0.5 text-[10px] text-gray-400 dark:text-gray-500">
+                {{ pdfFile ? fileSize : 'Secure PDF' }}
+              </p>
+            </div>
+          </div>
+
+          <div
+            v-if="markupCount"
+            class="mt-2 rounded-[10px] bg-amber-400/10 px-3 py-2 text-[10px] font-medium text-amber-800 dark:text-amber-200"
+          >
+            {{ markupCount }} {{ markupCount === 1 ? 'mark' : 'marks' }} will be included when you download, share, or print.
+          </div>
+
+          <p
+            v-if="actionMessage"
+            class="mt-2 rounded-[10px] bg-blue-500/[0.07] px-3 py-2 text-[11px] leading-4 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300"
+          >
+            {{ actionMessage }}
+          </p>
+
+          <div v-if="state.status === 'ready'" class="mt-3 grid grid-cols-3 gap-2 lg:mt-auto lg:grid-cols-2 lg:pt-6">
+            <AppButton
+              variant="secondary"
+              :disabled="busy"
+              @click="openDownloadDialog"
+            >
+              Download
+            </AppButton>
+            <AppButton
+              variant="secondary"
+              :loading="sharing"
+              :disabled="printing || preparingFile"
+              @click="sharePdf"
+            >
+              {{ canShareFile ? 'Share' : 'Save' }}
+            </AppButton>
+            <AppButton
+              class="lg:col-span-2"
+              :loading="printing"
+              :disabled="sharing || preparingFile"
+              @click="printPdf"
+            >
+              Print
+            </AppButton>
+          </div>
+
+          <p v-if="state.status === 'ready'" class="mt-3 hidden text-[10px] leading-4 text-gray-400 dark:text-gray-600 lg:block">
+            Your annotations are applied only to the copy you export. The original PDF remains unchanged.
+          </p>
+        </div>
+      </aside>
+
+      <main class="relative min-h-0 overflow-hidden bg-gray-950/[0.035] dark:bg-white/[0.04] lg:col-start-1 lg:row-start-1">
+        <div
+          v-if="state.status === 'loading'"
+          class="flex h-full min-h-0 items-center justify-center"
+        >
+          <div class="max-w-sm px-6 text-center">
+            <span class="mx-auto block h-7 w-7 animate-spin rounded-full border-2 border-gray-300 border-t-gray-900 dark:border-white/15 dark:border-t-white" />
+            <p class="mt-4 text-[13px] font-semibold text-gray-800 dark:text-gray-200">Preparing secure PDF…</p>
+            <p class="mt-1.5 text-[12px] leading-5 text-gray-400 dark:text-gray-500">The document stays inside your authenticated session.</p>
+          </div>
+        </div>
+
+        <div
+          v-else-if="state.status === 'error'"
+          class="flex h-full min-h-0 items-center justify-center bg-red-500/[0.045] px-6 text-center dark:bg-red-500/[0.07]"
+        >
+          <div class="max-w-md">
+            <div class="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-red-500/10 text-red-600 dark:text-red-300">
+              <AppNavIcon name="document" :size="20" />
+            </div>
+            <p class="mt-3 text-[13px] font-semibold text-red-700 dark:text-red-300">PDF could not be prepared</p>
+            <p class="mt-1.5 text-[12px] leading-5 text-red-600/80 dark:text-red-300/75">{{ errorMessage }}</p>
+            <AppButton class="mt-4" variant="secondary" size="sm" @click="loadPdf">Try again</AppButton>
+          </div>
+        </div>
+
         <SecurePdfCanvasViewer
-          v-if="pdfFile"
+          v-else-if="state.status === 'ready' && objectUrl && pdfFile"
           v-model="markupStrokes"
           :file="pdfFile"
           :disabled="busy"
-          class="min-h-0 flex-1"
+          class="h-full min-h-0"
           @error="onPreviewError"
         />
 
@@ -490,49 +565,8 @@ function onPreviewError(message: string) {
           @load="onPrintFrameLoad"
           @error="onPrintFrameError"
         />
-
-        <p
-          v-if="actionMessage"
-          class="mt-2 shrink-0 rounded-[10px] bg-blue-500/[0.07] px-3 py-2 text-[11px] text-blue-700 dark:bg-blue-500/10 dark:text-blue-300"
-        >
-          {{ actionMessage }}
-        </p>
-      </div>
+      </main>
     </div>
-
-    <template #footer>
-      <div class="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <AppButton variant="ghost" :disabled="busy" @click="close">Close</AppButton>
-
-        <div class="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap sm:justify-end">
-          <AppButton
-            v-if="state.status === 'ready'"
-            variant="secondary"
-            :disabled="busy"
-            @click="openDownloadDialog"
-          >
-            Download
-          </AppButton>
-          <AppButton
-            v-if="state.status === 'ready'"
-            variant="secondary"
-            :loading="sharing"
-            :disabled="printing || preparingFile"
-            @click="sharePdf"
-          >
-            {{ canShareFile ? 'Share' : 'Save to share' }}
-          </AppButton>
-          <AppButton
-            v-if="state.status === 'ready'"
-            :loading="printing"
-            :disabled="sharing || preparingFile"
-            @click="printPdf"
-          >
-            Print
-          </AppButton>
-        </div>
-      </div>
-    </template>
   </AppModal>
 
   <AppModal

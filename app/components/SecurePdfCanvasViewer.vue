@@ -586,49 +586,27 @@ function distanceToSegment(
     @keydown.left.prevent="changePage(-1)"
     @keydown.right.prevent="changePage(1)"
   >
-    <div class="flex shrink-0 flex-wrap items-center justify-between gap-2 bg-white/90 px-2.5 py-2 shadow-[0_1px_0_rgba(17,24,39,0.06)] backdrop-blur-xl dark:bg-[#17181b]/90 dark:shadow-[0_1px_0_rgba(255,255,255,0.06)]">
-      <div class="flex items-center gap-1">
-        <button
-          type="button"
-          :disabled="!canGoBack || rendering || disabled"
-          class="inline-flex h-8 w-8 items-center justify-center rounded-[9px] text-gray-500 transition hover:bg-gray-950/[0.06] hover:text-gray-950 disabled:opacity-30 dark:text-gray-400 dark:hover:bg-white/[0.08] dark:hover:text-white"
-          aria-label="Previous PDF page"
-          @click="changePage(-1)"
-        >
-          <svg viewBox="0 0 20 20" class="h-4 w-4" fill="none" aria-hidden="true"><path d="m12 5-5 5 5 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></svg>
-        </button>
-        <span class="min-w-[64px] text-center text-[11px] font-medium tabular-nums text-gray-500 dark:text-gray-400">
-          {{ pageCount ? `${pageNumber} / ${pageCount}` : '— / —' }}
-        </span>
-        <button
-          type="button"
-          :disabled="!canGoForward || rendering || disabled"
-          class="inline-flex h-8 w-8 items-center justify-center rounded-[9px] text-gray-500 transition hover:bg-gray-950/[0.06] hover:text-gray-950 disabled:opacity-30 dark:text-gray-400 dark:hover:bg-white/[0.08] dark:hover:text-white"
-          aria-label="Next PDF page"
-          @click="changePage(1)"
-        >
-          <svg viewBox="0 0 20 20" class="h-4 w-4" fill="none" aria-hidden="true"><path d="m8 5 5 5-5 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></svg>
-        </button>
-      </div>
+    <div class="shrink-0 bg-white/90 p-2 shadow-[0_1px_0_rgba(17,24,39,0.06)] backdrop-blur-xl dark:bg-[#17181b]/90 dark:shadow-[0_1px_0_rgba(255,255,255,0.06)]">
+      <div class="flex flex-wrap items-center gap-2">
+        <div class="grid w-full grid-cols-4 gap-1 rounded-[11px] bg-gray-950/[0.035] p-1 dark:bg-white/[0.05] sm:w-auto" role="toolbar" aria-label="PDF markup tools">
+          <button
+            v-for="option in TOOL_OPTIONS"
+            :key="option.value"
+            type="button"
+            :aria-pressed="tool === option.value"
+            :disabled="disabled"
+            class="h-9 min-w-[52px] rounded-[8px] px-2 text-[10px] font-semibold transition active:scale-[0.98] disabled:opacity-40"
+            :class="tool === option.value
+              ? 'bg-gray-950 text-white shadow-sm dark:bg-white dark:text-gray-950'
+              : 'text-gray-500 hover:bg-white/80 hover:text-gray-950 dark:text-gray-400 dark:hover:bg-white/[0.08] dark:hover:text-white'"
+            @click="selectTool(option.value)"
+          >
+            {{ option.label }}
+          </button>
+        </div>
 
-      <div class="order-3 flex w-full items-center gap-1 overflow-x-auto rounded-[10px] bg-gray-950/[0.035] p-1 sm:order-none sm:w-auto dark:bg-white/[0.05]" role="toolbar" aria-label="PDF markup tools">
-        <button
-          v-for="option in TOOL_OPTIONS"
-          :key="option.value"
-          type="button"
-          :aria-pressed="tool === option.value"
-          :disabled="disabled"
-          class="h-8 shrink-0 rounded-[8px] px-3 text-[10px] font-semibold transition disabled:opacity-40"
-          :class="tool === option.value
-            ? 'bg-gray-950 text-white shadow-sm dark:bg-white dark:text-gray-950'
-            : 'text-gray-500 hover:bg-white/80 hover:text-gray-950 dark:text-gray-400 dark:hover:bg-white/[0.08] dark:hover:text-white'"
-          @click="selectTool(option.value)"
-        >
-          {{ option.label }}
-        </button>
-
-        <template v-if="tool === 'pen' || tool === 'highlight'">
-          <div class="mx-1 h-5 w-px shrink-0 bg-gray-300/70 dark:bg-white/10" />
+        <div v-if="tool === 'pen' || tool === 'highlight'" class="flex shrink-0 items-center gap-1.5 rounded-[10px] bg-gray-950/[0.035] px-2.5 py-2 dark:bg-white/[0.05]">
+          <span class="mr-0.5 hidden text-[9px] font-semibold uppercase tracking-[0.1em] text-gray-400 md:inline dark:text-gray-500">Colour</span>
           <button
             v-for="colour in colourOptions"
             :key="colour"
@@ -640,132 +618,175 @@ function distanceToSegment(
             :style="{ backgroundColor: colour }"
             @click="selectColour(colour)"
           />
-        </template>
+        </div>
 
-        <div class="mx-1 h-5 w-px shrink-0 bg-gray-300/70 dark:bg-white/10" />
-        <button
-          type="button"
-          :disabled="!canUndo || disabled"
-          class="h-8 shrink-0 rounded-[8px] px-2.5 text-[10px] font-semibold text-gray-500 transition hover:bg-white/80 hover:text-gray-950 disabled:opacity-30 dark:text-gray-400 dark:hover:bg-white/[0.08] dark:hover:text-white"
-          @click="undoMarkup"
-        >
-          Undo
-        </button>
-        <button
-          type="button"
-          :disabled="!currentPageHasMarkup || disabled"
-          class="h-8 shrink-0 rounded-[8px] px-2.5 text-[10px] font-semibold text-gray-500 transition hover:bg-red-500/[0.08] hover:text-red-600 disabled:opacity-30 dark:text-gray-400 dark:hover:text-red-300"
-          @click="clearCurrentPage"
-        >
-          Clear page
-        </button>
-      </div>
+        <div class="grid shrink-0 grid-cols-2 gap-1">
+          <button
+            type="button"
+            :disabled="!canUndo || disabled"
+            class="h-9 rounded-[9px] bg-gray-950/[0.035] px-3 text-[10px] font-semibold text-gray-500 transition hover:bg-gray-950/[0.07] hover:text-gray-950 disabled:opacity-30 dark:bg-white/[0.05] dark:text-gray-400 dark:hover:bg-white/[0.09] dark:hover:text-white"
+            @click="undoMarkup"
+          >
+            Undo
+          </button>
+          <button
+            type="button"
+            :disabled="!currentPageHasMarkup || disabled"
+            class="h-9 rounded-[9px] bg-gray-950/[0.035] px-3 text-[10px] font-semibold text-gray-500 transition hover:bg-red-500/[0.08] hover:text-red-600 disabled:opacity-30 dark:bg-white/[0.05] dark:text-gray-400 dark:hover:text-red-300"
+            @click="clearCurrentPage"
+          >
+            Clear
+          </button>
+        </div>
 
-      <div class="flex items-center gap-1">
-        <span v-if="markupCount" class="mr-1 hidden rounded-full bg-amber-400/15 px-2 py-1 text-[9px] font-semibold text-amber-700 sm:inline-flex dark:text-amber-300">
-          {{ markupCount }} {{ markupCount === 1 ? 'mark' : 'marks' }}
-        </span>
-        <button
-          type="button"
-          :disabled="zoom <= 0.6 || rendering || disabled"
-          class="inline-flex h-8 w-8 items-center justify-center rounded-[9px] text-[18px] font-light text-gray-500 transition hover:bg-gray-950/[0.06] hover:text-gray-950 disabled:opacity-30 dark:text-gray-400 dark:hover:bg-white/[0.08] dark:hover:text-white"
-          aria-label="Zoom out"
-          @click="changeZoom(-0.15)"
-        >−</button>
-        <button
-          type="button"
-          :disabled="disabled"
-          class="h-8 min-w-[70px] rounded-[9px] px-2 text-[10px] font-semibold text-gray-600 transition hover:bg-gray-950/[0.06] hover:text-gray-950 disabled:opacity-40 dark:text-gray-300 dark:hover:bg-white/[0.08] dark:hover:text-white"
-          title="Fit the complete PDF page inside the viewer"
-          @click="fitPage"
-        >
-          {{ zoom === 1 ? 'Fit page' : zoomLabel }}
-        </button>
-        <button
-          type="button"
-          :disabled="zoom >= 2.5 || rendering || disabled"
-          class="inline-flex h-8 w-8 items-center justify-center rounded-[9px] text-[18px] font-light text-gray-500 transition hover:bg-gray-950/[0.06] hover:text-gray-950 disabled:opacity-30 dark:text-gray-400 dark:hover:bg-white/[0.08] dark:hover:text-white"
-          aria-label="Zoom in"
-          @click="changeZoom(0.15)"
-        >+</button>
-      </div>
-    </div>
-
-    <div
-      v-if="tool !== 'view'"
-      class="shrink-0 bg-amber-400/10 px-3 py-1.5 text-center text-[10px] font-medium text-amber-800 dark:text-amber-200"
-    >
-      {{ tool === 'eraser' ? 'Drag over a mark to erase it.' : 'Draw with your finger, Pencil, or pointer. Switch to View to scroll.' }}
-    </div>
-
-    <div
-      ref="viewportElement"
-      tabindex="0"
-      class="relative min-h-0 flex-1 overflow-auto overscroll-contain p-2 outline-none sm:p-4"
-    >
-      <div v-if="loading" class="absolute inset-0 z-20 flex items-center justify-center bg-gray-100/90 dark:bg-[#17181b]/90">
-        <div class="text-center">
-          <span class="mx-auto block h-6 w-6 animate-spin rounded-full border-2 border-gray-300 border-t-gray-900 dark:border-white/15 dark:border-t-white" />
-          <p class="mt-3 text-[11px] font-medium text-gray-500 dark:text-gray-400">Fitting document to your screen…</p>
+        <div class="ml-auto flex shrink-0 items-center gap-1 rounded-[10px] bg-gray-950/[0.035] p-1 dark:bg-white/[0.05]">
+          <button
+            type="button"
+            :disabled="zoom <= 0.6 || rendering || disabled"
+            class="inline-flex h-8 w-8 items-center justify-center rounded-[8px] text-[18px] font-light text-gray-500 transition hover:bg-white hover:text-gray-950 disabled:opacity-30 dark:text-gray-400 dark:hover:bg-white/[0.08] dark:hover:text-white"
+            aria-label="Zoom out"
+            @click="changeZoom(-0.15)"
+          >−</button>
+          <button
+            type="button"
+            :disabled="disabled"
+            class="h-8 min-w-[76px] rounded-[8px] px-2 text-[10px] font-semibold text-gray-600 transition hover:bg-white hover:text-gray-950 disabled:opacity-40 dark:text-gray-300 dark:hover:bg-white/[0.08] dark:hover:text-white"
+            title="Fit the complete PDF page inside the viewer"
+            @click="fitPage"
+          >
+            {{ zoom === 1 ? 'Fit page' : zoomLabel }}
+          </button>
+          <button
+            type="button"
+            :disabled="zoom >= 2.5 || rendering || disabled"
+            class="inline-flex h-8 w-8 items-center justify-center rounded-[8px] text-[18px] font-light text-gray-500 transition hover:bg-white hover:text-gray-950 disabled:opacity-30 dark:text-gray-400 dark:hover:bg-white/[0.08] dark:hover:text-white"
+            aria-label="Zoom in"
+            @click="changeZoom(0.15)"
+          >+</button>
         </div>
       </div>
 
-      <div v-if="viewerError" class="absolute inset-0 z-20 flex items-center justify-center bg-gray-100/95 px-6 text-center dark:bg-[#17181b]/95">
-        <p class="max-w-sm text-[12px] leading-5 text-red-600 dark:text-red-300">{{ viewerError }}</p>
-      </div>
+      <p
+        v-if="tool !== 'view'"
+        class="mt-2 rounded-[8px] bg-amber-400/10 px-2.5 py-1.5 text-[10px] font-medium leading-4 text-amber-800 dark:text-amber-200"
+      >
+        {{ tool === 'eraser' ? 'Drag over a mark to erase it.' : 'Draw on the page. Switch to View to scroll.' }}
+      </p>
+    </div>
 
-      <div class="flex min-h-full min-w-full">
-        <div class="relative m-auto shrink-0">
-          <canvas
-            ref="canvasElement"
-            class="block bg-white shadow-[0_12px_38px_rgba(15,23,42,0.14)]"
-            role="img"
-            :aria-label="`PDF page ${pageNumber} of ${pageCount || 1}`"
-          />
+    <div class="flex min-h-0 flex-1 flex-col">
+      <div class="flex min-h-0 min-w-0 flex-1 flex-col">
+        <div
+          ref="viewportElement"
+          tabindex="0"
+          class="relative min-h-0 flex-1 overflow-auto overscroll-contain p-2 outline-none sm:p-4"
+        >
+          <div v-if="loading" class="absolute inset-0 z-20 flex items-center justify-center bg-gray-100/90 dark:bg-[#17181b]/90">
+            <div class="text-center">
+              <span class="mx-auto block h-6 w-6 animate-spin rounded-full border-2 border-gray-300 border-t-gray-900 dark:border-white/15 dark:border-t-white" />
+              <p class="mt-3 text-[11px] font-medium text-gray-500 dark:text-gray-400">Fitting document to your screen…</p>
+            </div>
+          </div>
 
-          <svg
-            v-if="displayWidth && displayHeight"
-            ref="overlayElement"
-            class="absolute inset-0 z-10 h-full w-full select-none"
-            :class="tool === 'view' ? 'pointer-events-none' : 'pointer-events-auto touch-none'"
-            :style="{ cursor: overlayCursor }"
-            :viewBox="`0 0 ${displayWidth} ${displayHeight}`"
-            preserveAspectRatio="none"
-            aria-label="PDF markup surface"
-            @pointerdown="beginMarkup"
-            @pointermove="continueMarkup"
-            @pointerup="finishMarkup"
-            @pointercancel="cancelMarkup"
-          >
-            <template v-for="stroke in screenStrokes" :key="stroke.id">
-              <circle
-                v-if="stroke.screenPoints.length === 1"
-                :cx="stroke.screenPoints[0].x"
-                :cy="stroke.screenPoints[0].y"
-                :r="stroke.screenWidth / 2"
-                :fill="stroke.color"
-                :fill-opacity="stroke.opacity"
-                :style="stroke.mode === 'highlight' ? { mixBlendMode: 'multiply' } : undefined"
+          <div v-if="viewerError" class="absolute inset-0 z-20 flex items-center justify-center bg-gray-100/95 px-6 text-center dark:bg-[#17181b]/95">
+            <p class="max-w-sm text-[12px] leading-5 text-red-600 dark:text-red-300">{{ viewerError }}</p>
+          </div>
+
+          <div class="flex min-h-full min-w-full">
+            <div class="relative m-auto shrink-0">
+              <canvas
+                ref="canvasElement"
+                class="block bg-white shadow-[0_12px_38px_rgba(15,23,42,0.14)]"
+                role="img"
+                :aria-label="`PDF page ${pageNumber} of ${pageCount || 1}`"
               />
-              <polyline
-                v-else
-                :points="stroke.pointList"
-                fill="none"
-                :stroke="stroke.color"
-                :stroke-opacity="stroke.opacity"
-                :stroke-width="stroke.screenWidth"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                :style="stroke.mode === 'highlight' ? { mixBlendMode: 'multiply' } : undefined"
-              />
-            </template>
-          </svg>
 
-          <div v-if="rendering && !loading" class="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-white/55 backdrop-blur-[1px]">
-            <span class="h-5 w-5 animate-spin rounded-full border-2 border-gray-300 border-t-gray-900" />
+              <svg
+                v-if="displayWidth && displayHeight"
+                ref="overlayElement"
+                class="absolute inset-0 z-10 h-full w-full select-none"
+                :class="tool === 'view' ? 'pointer-events-none' : 'pointer-events-auto touch-none'"
+                :style="{ cursor: overlayCursor }"
+                :viewBox="`0 0 ${displayWidth} ${displayHeight}`"
+                preserveAspectRatio="none"
+                aria-label="PDF markup surface"
+                @pointerdown="beginMarkup"
+                @pointermove="continueMarkup"
+                @pointerup="finishMarkup"
+                @pointercancel="cancelMarkup"
+              >
+                <template v-for="stroke in screenStrokes" :key="stroke.id">
+                  <circle
+                    v-if="stroke.screenPoints.length === 1"
+                    :cx="stroke.screenPoints[0].x"
+                    :cy="stroke.screenPoints[0].y"
+                    :r="stroke.screenWidth / 2"
+                    :fill="stroke.color"
+                    :fill-opacity="stroke.opacity"
+                    :style="stroke.mode === 'highlight' ? { mixBlendMode: 'multiply' } : undefined"
+                  />
+                  <polyline
+                    v-else
+                    :points="stroke.pointList"
+                    fill="none"
+                    :stroke="stroke.color"
+                    :stroke-opacity="stroke.opacity"
+                    :stroke-width="stroke.screenWidth"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    :style="stroke.mode === 'highlight' ? { mixBlendMode: 'multiply' } : undefined"
+                  />
+                </template>
+              </svg>
+
+              <div v-if="rendering && !loading" class="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-white/55 backdrop-blur-[1px]">
+                <span class="h-5 w-5 animate-spin rounded-full border-2 border-gray-300 border-t-gray-900" />
+              </div>
+            </div>
           </div>
         </div>
+
+        <nav
+          v-if="pageCount > 1"
+          class="flex shrink-0 items-center justify-center gap-2.5 bg-white/90 px-3 py-2.5 shadow-[0_-1px_0_rgba(17,24,39,0.06)] backdrop-blur-xl dark:bg-[#17181b]/90 dark:shadow-[0_-1px_0_rgba(255,255,255,0.06)]"
+          aria-label="PDF page navigation"
+        >
+          <button
+            type="button"
+            :disabled="!canGoBack || rendering || disabled"
+            class="inline-flex h-9 items-center justify-center gap-1.5 rounded-[10px] bg-gray-950/[0.045] px-2.5 text-[10px] font-semibold text-gray-600 transition hover:bg-gray-950/[0.08] hover:text-gray-950 active:scale-[0.98] disabled:opacity-30 dark:bg-white/[0.06] dark:text-gray-300 dark:hover:bg-white/[0.1] dark:hover:text-white sm:px-3"
+            aria-label="Previous PDF page"
+            @click="changePage(-1)"
+          >
+            <svg viewBox="0 0 20 20" class="h-4 w-4" fill="none" aria-hidden="true"><path d="m12 5-5 5 5 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></svg>
+            <span class="hidden sm:inline">Previous</span>
+          </button>
+
+          <div class="w-[112px] text-center sm:w-[140px]">
+            <p class="text-[11px] font-semibold tabular-nums text-gray-700 dark:text-gray-200">
+              Page {{ pageNumber }} <span class="font-normal text-gray-400">of</span> {{ pageCount }}
+            </p>
+            <div class="mx-auto mt-1.5 h-1 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-white/10">
+              <div
+                class="h-full rounded-full bg-gray-900 transition-[width] duration-200 dark:bg-white"
+                :style="{ width: `${(pageNumber / pageCount) * 100}%` }"
+              />
+            </div>
+          </div>
+
+          <button
+            type="button"
+            :disabled="!canGoForward || rendering || disabled"
+            class="inline-flex h-9 items-center justify-center gap-1.5 rounded-[10px] bg-gray-950/[0.045] px-2.5 text-[10px] font-semibold text-gray-600 transition hover:bg-gray-950/[0.08] hover:text-gray-950 active:scale-[0.98] disabled:opacity-30 dark:bg-white/[0.06] dark:text-gray-300 dark:hover:bg-white/[0.1] dark:hover:text-white sm:px-3"
+            aria-label="Next PDF page"
+            @click="changePage(1)"
+          >
+            <span class="hidden sm:inline">Next</span>
+            <svg viewBox="0 0 20 20" class="h-4 w-4" fill="none" aria-hidden="true"><path d="m8 5 5 5-5 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></svg>
+          </button>
+        </nav>
       </div>
+
     </div>
   </section>
 </template>

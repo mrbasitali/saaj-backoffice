@@ -5,10 +5,12 @@ const props = withDefaults(defineProps<{
  description?: string
  maxWidth?: string
  fullScreen?: boolean
+ hideHeader?: boolean
 }>(), {
  description: undefined,
  maxWidth: 'max-w-3xl',
  fullScreen: false,
+ hideHeader: false,
 })
 
 const emit = defineEmits<{
@@ -223,6 +225,7 @@ onBeforeUnmount(() => {
  >
  <!-- Header -->
  <header
+ v-if="!hideHeader"
  class="
  flex
  shrink-0
