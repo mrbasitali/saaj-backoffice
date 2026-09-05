@@ -420,6 +420,7 @@ function onPreviewError(message: string) {
   <AppModal
     :open="state.open"
     :title="request?.title || 'PDF document'"
+    :z-index="120"
     full-screen
     hide-header
     @close="close"
@@ -574,6 +575,7 @@ function onPreviewError(message: string) {
     title="Download PDF"
     description="Confirm the suggested file name or enter a clearer one for this copy."
     max-width="max-w-md"
+    :z-index="130"
     @close="closeDownloadDialog"
   >
     <form class="px-4 py-5" @submit.prevent="confirmDownload">

@@ -6,11 +6,13 @@ const props = withDefaults(defineProps<{
  maxWidth?: string
  fullScreen?: boolean
  hideHeader?: boolean
+ zIndex?: number
 }>(), {
  description: undefined,
  maxWidth: 'max-w-3xl',
  fullScreen: false,
  hideHeader: false,
+ zIndex: 100,
 })
 
 const emit = defineEmits<{
@@ -136,8 +138,8 @@ onBeforeUnmount(() => {
  class="
  fixed
  inset-0
- z-[100]
  "
+ :style="{ zIndex }"
  >
  <!-- Backdrop -->
  <button
