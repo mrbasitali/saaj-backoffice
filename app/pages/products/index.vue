@@ -61,6 +61,7 @@ type Product = {
  meta_description: string | null
  is_active: boolean
  is_featured: boolean
+ is_new_arrival: boolean
  sort_order: number
  published_at: string | null
  brand?: Brand | null
@@ -110,6 +111,7 @@ const brandFilter = ref('all')
 const categoryFilter = ref('all')
 const activeFilter = ref('all')
 const featuredFilter = ref('all')
+const newArrivalFilter = ref('all')
 const imageStatusFilter = ref('all')
 const publishedStatusFilter = ref('all')
 const sortBy = ref('updated')
@@ -117,6 +119,10 @@ const perPage = ref(20)
 const page = ref(1)
 const filtersOpen = ref(false)
 const editingProductId = ref<number | null>(null)
+const selectionMode = ref(false)
+const selectedProductIds = ref<number[]>([])
+const bulkActionOpen = ref(false)
+const bulkUpdateBusy = ref(false)
 
 const formOpen = ref(false)
 const formMode = ref<'create' | 'edit'>('create')
@@ -155,6 +161,12 @@ const featuredOptions = [
  { label: 'All featured states', value: 'all' },
  { label: 'Featured', value: 'yes' },
  { label: 'Not featured', value: 'no' },
+]
+
+const newArrivalOptions = [
+ { label: 'All New In states', value: 'all' },
+ { label: 'New arrival', value: 'yes' },
+ { label: 'Not new', value: 'no' },
 ]
 
 const imageStatusOptions = [
@@ -201,6 +213,7 @@ watch([
  categoryFilter,
  activeFilter,
  featuredFilter,
+ newArrivalFilter,
  imageStatusFilter,
  publishedStatusFilter,
  sortBy,
@@ -283,6 +296,10 @@ function buildQuery() {
  query.is_featured = featuredFilter.value === 'yes' ? 1 : 0
  }
 
+ if (newArrivalFilter.value !== 'all') {
+ query.is_new_arrival = newArrivalFilter.value === 'yes' ? 1 : 0
+ }
+
  if (imageStatusFilter.value !== 'all') {
  query.image_status = imageStatusFilter.value
  }
@@ -311,6 +328,7 @@ const {
  categoryFilter,
  activeFilter,
  featuredFilter,
+ newArrivalFilter,
  imageStatusFilter,
  publishedStatusFilter,
  sortBy,
@@ -323,6 +341,8 @@ const {
 
 const products = computed(() => data.value?.data ?? [])
 const meta = computed(() => data.value?.meta)
+const selectedProductCount = computed(() => selectedProductIds.value.length)
+const allPageProductsSelected = computed(() => products.value.length > 0 && products.value.every(product => selectedProductIds.value.includes(product.id)))
 
 const isInitialLoading = computed(() => {
  return (pending.value || bootstrapPending.value) && (!data.value || !bootstrap.value)
@@ -330,6 +350,11 @@ const isInitialLoading = computed(() => {
 
 const isRefreshing = computed(() => {
  return (pending.value || bootstrapPending.value) && Boolean(data.value && bootstrap.value)
+})
+
+watch(products, (items) => {
+ const visibleIds = new Set(items.map(item => item.id))
+ selectedProductIds.value = selectedProductIds.value.filter(id => visibleIds.has(id))
 })
 
 const hasError = computed(() => error.value || bootstrapError.value)
@@ -341,6 +366,7 @@ const hasActiveFilters = computed(() => {
  categoryFilter.value !== 'all' ||
  activeFilter.value !== 'all' ||
  featuredFilter.value !== 'all' ||
+ newArrivalFilter.value !== 'all' ||
  imageStatusFilter.value !== 'all' ||
  publishedStatusFilter.value !== 'all' ||
  sortBy.value !== 'updated' ||
@@ -350,6 +376,7 @@ const hasActiveFilters = computed(() => {
 
 const activeProducts = computed(() => products.value.filter((item) => item.is_active).length)
 const featuredProducts = computed(() => products.value.filter((item) => item.is_featured).length)
+const newArrivalProducts = computed(() => products.value.filter((item) => item.is_new_arrival).length)
 const productsMissingImages = computed(() => products.value.filter((item) => imageCount(item) === 0).length)
 
 const visibleFilterCount = computed(() => {
@@ -359,6 +386,7 @@ const visibleFilterCount = computed(() => {
  categoryFilter.value !== 'all',
  activeFilter.value !== 'all',
  featuredFilter.value !== 'all',
+ newArrivalFilter.value !== 'all',
  imageStatusFilter.value !== 'all',
  publishedStatusFilter.value !== 'all',
  sortBy.value !== 'updated',
@@ -431,10 +459,11 @@ function publishLabel(product: Product) {
  return new Date(product.published_at).getTime() > Date.now() ? 'Scheduled' : 'Published'
 }
 
-function setQuickView(view: 'all' | 'active' | 'inactive' | 'featured' | 'needs_images' | 'drafts' | 'scheduled') {
+function setQuickView(view: 'all' | 'active' | 'inactive' | 'featured' | 'new_in' | 'needs_images' | 'drafts' | 'scheduled') {
  if (view === 'all') {
  activeFilter.value = 'all'
  featuredFilter.value = 'all'
+ newArrivalFilter.value = 'all'
  imageStatusFilter.value = 'all'
  publishedStatusFilter.value = 'all'
  return
@@ -442,30 +471,119 @@ function setQuickView(view: 'all' | 'active' | 'inactive' | 'featured' | 'needs_
 
  activeFilter.value = 'all'
  featuredFilter.value = 'all'
+ newArrivalFilter.value = 'all'
  imageStatusFilter.value = 'all'
  publishedStatusFilter.value = 'all'
 
  if (view === 'active') activeFilter.value = 'active'
  if (view === 'inactive') activeFilter.value = 'inactive'
  if (view === 'featured') featuredFilter.value = 'yes'
+ if (view === 'new_in') newArrivalFilter.value = 'yes'
  if (view === 'needs_images') imageStatusFilter.value = 'no_images'
  if (view === 'drafts') publishedStatusFilter.value = 'draft'
  if (view === 'scheduled') publishedStatusFilter.value = 'scheduled'
 }
 
-function quickViewIsActive(view: 'all' | 'active' | 'inactive' | 'featured' | 'needs_images' | 'drafts' | 'scheduled') {
+function quickViewIsActive(view: 'all' | 'active' | 'inactive' | 'featured' | 'new_in' | 'needs_images' | 'drafts' | 'scheduled') {
  if (view === 'all') {
- return activeFilter.value === 'all' && featuredFilter.value === 'all' && imageStatusFilter.value === 'all' && publishedStatusFilter.value === 'all'
+ return activeFilter.value === 'all' && featuredFilter.value === 'all' && newArrivalFilter.value === 'all' && imageStatusFilter.value === 'all' && publishedStatusFilter.value === 'all'
  }
 
  if (view === 'active') return activeFilter.value === 'active'
  if (view === 'inactive') return activeFilter.value === 'inactive'
  if (view === 'featured') return featuredFilter.value === 'yes'
+ if (view === 'new_in') return newArrivalFilter.value === 'yes'
  if (view === 'needs_images') return imageStatusFilter.value === 'no_images'
  if (view === 'drafts') return publishedStatusFilter.value === 'draft'
  if (view === 'scheduled') return publishedStatusFilter.value === 'scheduled'
 
  return false
+}
+
+function isProductSelected(productId: number) {
+ return selectedProductIds.value.includes(productId)
+}
+
+function enterSelectionMode() {
+ selectionMode.value = true
+ bulkActionOpen.value = false
+}
+
+function exitSelectionMode() {
+ selectionMode.value = false
+ bulkActionOpen.value = false
+ selectedProductIds.value = []
+}
+
+function toggleSelectionMode() {
+ if (selectionMode.value) {
+ exitSelectionMode()
+ return
+ }
+
+ enterSelectionMode()
+}
+
+function toggleProductSelection(productId: number) {
+ if (!selectionMode.value) return
+
+ if (isProductSelected(productId)) {
+ selectedProductIds.value = selectedProductIds.value.filter(id => id !== productId)
+ return
+ }
+
+ selectedProductIds.value = [...selectedProductIds.value, productId]
+}
+
+function toggleSelectPage() {
+ if (!selectionMode.value) return
+
+ selectedProductIds.value = allPageProductsSelected.value
+ ? []
+ : products.value.map(product => product.id)
+}
+
+function clearProductSelection() {
+ selectedProductIds.value = []
+ bulkActionOpen.value = false
+}
+
+type BulkFlagField = 'is_new_arrival' | 'is_featured'
+
+async function bulkSetFlag(field: BulkFlagField, value: boolean, label: string) {
+ if (!selectedProductIds.value.length || bulkUpdateBusy.value) return
+
+ bulkUpdateBusy.value = true
+ bulkActionOpen.value = false
+
+ try {
+ const count = selectedProductIds.value.length
+
+ await $api('/admin/products/bulk-flags', {
+ method: 'PATCH',
+ body: {
+ product_ids: selectedProductIds.value,
+ field,
+ value,
+ },
+ })
+
+ clearProductSelection()
+ await refresh()
+ showNotice(`${count} ${count === 1 ? 'product' : 'products'} ${value ? 'added to' : 'removed from'} ${label}.`)
+ } catch (error: any) {
+ showNotice(extractApiErrorMessage(error, 'Could not update the selected products.'))
+ } finally {
+ bulkUpdateBusy.value = false
+ }
+}
+
+function bulkSetNewArrival(value: boolean) {
+ return bulkSetFlag('is_new_arrival', value, 'New In')
+}
+
+function bulkSetFeatured(value: boolean) {
+ return bulkSetFlag('is_featured', value, 'Featured')
 }
 
 function showNotice(message: string) {
@@ -611,6 +729,7 @@ function clearFilters() {
  categoryFilter.value = 'all'
  activeFilter.value = 'all'
  featuredFilter.value = 'all'
+ newArrivalFilter.value = 'all'
  imageStatusFilter.value = 'all'
  publishedStatusFilter.value = 'all'
  sortBy.value = 'updated'
@@ -700,9 +819,7 @@ function nextPage() {
  dark:text-gray-500
  "
  >
- Manage product content, images,
- publishing and variants from one
- catalog.
+ Manage product content, images, publishing and variants from one catalog. Use Select when you want to update several products together.
  </p>
 
  <div
@@ -783,6 +900,26 @@ function nextPage() {
  />
  </svg>
  </button>
+
+ <AppButton
+ variant="secondary"
+ size="sm"
+ @click="toggleSelectionMode"
+ >
+ <svg
+ class="h-3.5 w-3.5"
+ viewBox="0 0 20 20"
+ fill="none"
+ >
+ <rect x="3.5" y="3.5" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.4" />
+ <rect x="11.5" y="3.5" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.4" />
+ <rect x="3.5" y="11.5" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.4" />
+ <path v-if="selectionMode" d="m12 14 1.4 1.4 3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+ <rect v-else x="11.5" y="11.5" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.4" />
+ </svg>
+
+ {{ selectionMode ? 'Done selecting' : 'Select' }}
+ </AppButton>
 
  <AppButton
  size="sm"
@@ -1220,6 +1357,43 @@ function nextPage() {
  Featured
  </button>
 
+
+ <button
+ type="button"
+ class="
+ h-8
+ shrink-0
+ rounded-[8px]
+ px-2.5
+ text-[12px]
+ font-medium
+ transition
+ "
+ :class="
+ quickViewIsActive('new_in')
+ ? `
+ bg-gray-950
+ text-white
+
+ dark:bg-white
+ dark:text-gray-950
+ `
+ : `
+ text-gray-500
+
+ hover:bg-gray-950/[0.045]
+ hover:text-gray-900
+
+ dark:text-gray-500
+ dark:hover:bg-white/[0.06]
+ dark:hover:text-gray-200
+ `
+ "
+ @click="setQuickView('new_in')"
+ >
+ New In
+ </button>
+
  <button
  type="button"
  class="
@@ -1251,9 +1425,7 @@ function nextPage() {
  dark:hover:text-gray-200
  `
  "
- @click="
- setQuickView('needs_images')
- "
+ @click="setQuickView('needs_images')"
  >
  Needs images
  </button>
@@ -1376,7 +1548,7 @@ function nextPage() {
 
  xl:grid-cols-4
 
- 2xl:grid-cols-8
+ 2xl:grid-cols-9
  "
  >
  <AppSelect
@@ -1401,6 +1573,12 @@ function nextPage() {
  v-model="featuredFilter"
  label="Featured"
  :options="featuredOptions"
+ />
+
+ <AppSelect
+ v-model="newArrivalFilter"
+ label="New In"
+ :options="newArrivalOptions"
  />
 
  <AppSelect
@@ -1488,6 +1666,13 @@ function nextPage() {
  </span>
 
  <span
+ v-if="newArrivalProducts"
+ >
+ {{ newArrivalProducts }}
+ new arrivals
+ </span>
+
+ <span
  v-if="productsMissingImages"
  class="
  text-amber-600
@@ -1500,6 +1685,105 @@ function nextPage() {
  </span>
  </div>
  </section>
+
+ <Transition
+ enter-active-class="transition duration-180 ease-out"
+ enter-from-class="-translate-y-1 opacity-0"
+ leave-active-class="transition duration-120 ease-in"
+ leave-to-class="-translate-y-1 opacity-0"
+ >
+ <section
+ v-if="selectionMode"
+ class="relative z-20 flex flex-col gap-3 rounded-[16px] border border-gray-950/[0.07] bg-white px-3.5 py-3 shadow-[0_8px_28px_rgba(17,24,39,0.045)] dark:border-white/[0.07] dark:bg-[#111214] dark:shadow-none sm:flex-row sm:items-center sm:justify-between"
+ >
+ <div class="flex min-w-0 items-center gap-3">
+ <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] bg-gray-950 text-white dark:bg-white dark:text-gray-950">
+ <svg viewBox="0 0 20 20" fill="none" class="h-4 w-4">
+ <path d="m5.2 10.2 2.7 2.7 6.9-6.9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+ </svg>
+ </span>
+ <div class="min-w-0">
+ <p class="text-[12px] font-semibold text-gray-900 dark:text-gray-100">Selection mode</p>
+ <p class="mt-0.5 truncate text-[11px] text-gray-400 dark:text-gray-500">
+ {{ selectedProductCount ? `${selectedProductCount} ${selectedProductCount === 1 ? 'product' : 'products'} selected` : 'Choose products, then apply one action to all of them.' }}
+ </p>
+ </div>
+ </div>
+
+ <div class="flex flex-wrap items-center gap-1.5">
+ <button
+ type="button"
+ class="h-8 rounded-[9px] px-2.5 text-[11px] font-medium text-gray-500 transition hover:bg-gray-950/[0.05] hover:text-gray-900 dark:text-gray-400 dark:hover:bg-white/[0.07] dark:hover:text-white"
+ @click="toggleSelectPage"
+ >
+ {{ allPageProductsSelected ? 'Clear page' : 'Select page' }}
+ </button>
+
+ <div class="relative">
+ <button
+ type="button"
+ class="inline-flex h-8 items-center gap-2 rounded-[9px] bg-gray-950 px-3 text-[11px] font-semibold text-white transition hover:bg-gray-800 disabled:pointer-events-none disabled:opacity-35 dark:bg-white dark:text-gray-950 dark:hover:bg-gray-100"
+ :disabled="!selectedProductCount || bulkUpdateBusy"
+ :aria-expanded="bulkActionOpen"
+ @click="bulkActionOpen = !bulkActionOpen"
+ >
+ <span>{{ bulkUpdateBusy ? 'Updating…' : 'Bulk actions' }}</span>
+ <svg viewBox="0 0 16 16" fill="none" class="h-3.5 w-3.5 transition-transform" :class="bulkActionOpen ? 'rotate-180' : ''">
+ <path d="m4 6 4 4 4-4" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round" />
+ </svg>
+ </button>
+
+ <Transition
+ enter-active-class="transition duration-150 ease-out"
+ enter-from-class="-translate-y-1 opacity-0"
+ leave-active-class="transition duration-100 ease-in"
+ leave-to-class="-translate-y-1 opacity-0"
+ >
+ <div
+ v-if="bulkActionOpen && selectedProductCount"
+ class="absolute right-0 top-[calc(100%+8px)] z-40 w-[238px] overflow-hidden rounded-[12px] border border-gray-950/[0.08] bg-white p-1.5 shadow-[0_16px_48px_rgba(17,24,39,0.14)] dark:border-white/[0.08] dark:bg-[#17181b]"
+ >
+ <p class="px-2.5 pb-1.5 pt-1 text-[9px] font-semibold uppercase tracking-[0.12em] text-gray-400 dark:text-gray-500">New In</p>
+ <button type="button" class="flex w-full items-center justify-between rounded-[8px] px-2.5 py-2 text-left text-[11px] font-medium text-gray-700 transition hover:bg-gray-950/[0.05] dark:text-gray-200 dark:hover:bg-white/[0.07]" @click="bulkSetNewArrival(true)">
+ <span>Add to New In</span><span class="text-gray-300 dark:text-gray-600">+</span>
+ </button>
+ <button type="button" class="flex w-full items-center justify-between rounded-[8px] px-2.5 py-2 text-left text-[11px] font-medium text-gray-700 transition hover:bg-gray-950/[0.05] dark:text-gray-200 dark:hover:bg-white/[0.07]" @click="bulkSetNewArrival(false)">
+ <span>Remove from New In</span><span class="text-gray-300 dark:text-gray-600">−</span>
+ </button>
+
+ <div class="my-1.5 h-px bg-gray-100 dark:bg-white/[0.06]" />
+ <p class="px-2.5 pb-1.5 pt-1 text-[9px] font-semibold uppercase tracking-[0.12em] text-gray-400 dark:text-gray-500">Featured</p>
+ <button type="button" class="flex w-full items-center justify-between rounded-[8px] px-2.5 py-2 text-left text-[11px] font-medium text-gray-700 transition hover:bg-gray-950/[0.05] dark:text-gray-200 dark:hover:bg-white/[0.07]" @click="bulkSetFeatured(true)">
+ <span>Mark as featured</span><span class="text-gray-300 dark:text-gray-600">+</span>
+ </button>
+ <button type="button" class="flex w-full items-center justify-between rounded-[8px] px-2.5 py-2 text-left text-[11px] font-medium text-gray-700 transition hover:bg-gray-950/[0.05] dark:text-gray-200 dark:hover:bg-white/[0.07]" @click="bulkSetFeatured(false)">
+ <span>Remove featured</span><span class="text-gray-300 dark:text-gray-600">−</span>
+ </button>
+ </div>
+ </Transition>
+ </div>
+
+ <button
+ v-if="selectedProductCount"
+ type="button"
+ class="h-8 px-2 text-[11px] font-medium text-gray-400 transition hover:text-gray-900 dark:text-gray-500 dark:hover:text-white"
+ :disabled="bulkUpdateBusy"
+ @click="clearProductSelection"
+ >
+ Clear
+ </button>
+
+ <button
+ type="button"
+ class="h-8 rounded-[9px] px-2.5 text-[11px] font-semibold text-gray-600 transition hover:bg-gray-950/[0.05] hover:text-gray-950 dark:text-gray-400 dark:hover:bg-white/[0.07] dark:hover:text-white"
+ :disabled="bulkUpdateBusy"
+ @click="exitSelectionMode"
+ >
+ Done
+ </button>
+ </div>
+ </section>
+ </Transition>
 
  <!-- Error -->
  <AppErrorState
@@ -1591,8 +1875,16 @@ function nextPage() {
  dark:text-gray-600
  "
  >
- <div>
- Product
+ <div class="flex items-center gap-3">
+ <input
+ v-if="selectionMode"
+ type="checkbox"
+ class="h-4 w-4 cursor-pointer accent-gray-950 dark:accent-white"
+ :checked="allPageProductsSelected"
+ aria-label="Select all products on this page"
+ @change="toggleSelectPage"
+ >
+ <span>Product</span>
  </div>
 
  <div>
@@ -1646,6 +1938,7 @@ function nextPage() {
 
  dark:hover:bg-white/[0.025]
  "
+ :class="{ 'bg-gray-950/[0.028] dark:bg-white/[0.035]': selectionMode && isProductSelected(product.id) }"
  >
  <!-- Product -->
  <div
@@ -1655,6 +1948,14 @@ function nextPage() {
  items-center
  gap-3
  "
+ >
+ <input
+ v-if="selectionMode"
+ type="checkbox"
+ class="h-4 w-4 shrink-0 cursor-pointer accent-gray-950 dark:accent-white"
+ :checked="isProductSelected(product.id)"
+ :aria-label="`Select ${product.name}`"
+ @change="toggleProductSelection(product.id)"
  >
  <button
  type="button"
@@ -1681,7 +1982,7 @@ function nextPage() {
  dark:bg-white/[0.06]
  dark:focus-visible:ring-white/10
  "
- @click="openEdit(product)"
+ @click="selectionMode ? toggleProductSelection(product.id) : openEdit(product)"
  >
  <img
  v-if="
@@ -1744,7 +2045,7 @@ function nextPage() {
  dark:text-gray-100
  dark:hover:text-gray-300
  "
- @click="openEdit(product)"
+ @click="selectionMode ? toggleProductSelection(product.id) : openEdit(product)"
  >
  {{ product.name }}
  </button>
@@ -1898,6 +2199,21 @@ function nextPage() {
  "
  >
  Featured
+ </p>
+
+ <p
+ v-if="product.is_new_arrival"
+ class="
+ mt-1
+
+ text-[12px]
+ font-medium
+ text-violet-600
+
+ dark:text-violet-400
+ "
+ >
+ New arrival
  </p>
  </div>
 
@@ -2141,6 +2457,7 @@ function nextPage() {
  dark:bg-[#111214]
  dark:shadow-none
  "
+ :class="{ 'ring-1 ring-gray-950/10 dark:ring-white/10': selectionMode && isProductSelected(product.id) }"
  >
  <div
  class="
@@ -2148,6 +2465,14 @@ function nextPage() {
  items-start
  gap-3
  "
+ >
+ <input
+ v-if="selectionMode"
+ type="checkbox"
+ class="mt-1 h-4 w-4 shrink-0 cursor-pointer accent-gray-950 dark:accent-white"
+ :checked="isProductSelected(product.id)"
+ :aria-label="`Select ${product.name}`"
+ @change="toggleProductSelection(product.id)"
  >
  <button
  type="button"
@@ -2164,7 +2489,7 @@ function nextPage() {
 
  dark:bg-white/[0.06]
  "
- @click="openEdit(product)"
+ @click="selectionMode ? toggleProductSelection(product.id) : openEdit(product)"
  >
  <img
  v-if="

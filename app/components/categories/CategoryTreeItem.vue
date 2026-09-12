@@ -27,8 +27,16 @@ const props = withDefaults(defineProps<{
   category: Category
   level?: number
   expandedIds: number[]
+  dragEnabled?: boolean
+  draggingId?: number | null
+  dropTargetId?: number | null
+  dropPosition?: 'before' | 'after' | null
 }>(), {
   level: 0,
+  dragEnabled: false,
+  draggingId: null,
+  dropTargetId: null,
+  dropPosition: null,
 })
 
 const emit = defineEmits<{
@@ -36,11 +44,46 @@ const emit = defineEmits<{
   'open-create': [category: Category]
   'open-edit': [category: Category]
   'ask-delete': [category: Category]
+  'drag-start': [category: Category]
+  'drag-end': []
+  'drag-over': [payload: { category: Category; position: 'before' | 'after' }]
+  'drop-category': [payload: { category: Category; position: 'before' | 'after' }]
 }>()
 
 const hasChildren = computed(() => Boolean(props.category.children?.length))
 const isExpanded = computed(() => props.expandedIds.includes(props.category.id))
 const indent = computed(() => Math.min(props.level, 5) * 22)
+const isDragging = computed(() => props.draggingId === props.category.id)
+const isDropTarget = computed(() => props.dropTargetId === props.category.id)
+
+function dragPosition(event: DragEvent): 'before' | 'after' {
+  const target = event.currentTarget as HTMLElement | null
+  if (!target) return 'after'
+
+  const rect = target.getBoundingClientRect()
+  return event.clientY < rect.top + rect.height / 2 ? 'before' : 'after'
+}
+
+function onDragStart(event: DragEvent) {
+  if (!props.dragEnabled) {
+    event.preventDefault()
+    return
+  }
+
+  event.dataTransfer?.setData('text/plain', String(props.category.id))
+  if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move'
+  emit('drag-start', props.category)
+}
+
+function onDragOver(event: DragEvent) {
+  if (!props.dragEnabled || props.draggingId === props.category.id) return
+  emit('drag-over', { category: props.category, position: dragPosition(event) })
+}
+
+function onDrop(event: DragEvent) {
+  if (!props.dragEnabled || props.draggingId === props.category.id) return
+  emit('drop-category', { category: props.category, position: dragPosition(event) })
+}
 
 function categoryImage(category: Category) {
   return category.image_url || category.icon_url || category.banner_image_url
@@ -70,14 +113,46 @@ function directChildCount(category: Category) {
   >
     <div
       class="group relative flex min-w-0 items-center gap-3 px-3 py-2.5 transition hover:bg-gray-950/[0.018] dark:hover:bg-white/[0.025] sm:px-4"
-      :class="level === 0 ? 'rounded-[16px]' : 'rounded-[10px]'"
+      :class="[
+        level === 0 ? 'rounded-[16px]' : 'rounded-[10px]',
+        isDragging ? 'opacity-45' : '',
+      ]"
       :style="{ paddingLeft: level > 0 ? `${16 + indent}px` : undefined }"
+      @dragover.stop.prevent="onDragOver"
+      @drop.stop.prevent="onDrop"
     >
+      <span
+        v-if="isDropTarget && dropPosition"
+        class="pointer-events-none absolute inset-x-2 z-20 h-0.5 rounded-full bg-gray-950 dark:bg-white"
+        :class="dropPosition === 'before' ? 'top-0' : 'bottom-0'"
+      />
       <span
         v-if="level > 0"
         class="absolute bottom-0 top-0 w-px bg-gray-100 dark:bg-white/[0.055]"
         :style="{ left: `${10 + indent - 11}px` }"
       />
+
+      <button
+        v-if="dragEnabled"
+        type="button"
+        draggable="true"
+        title="Drag to reorder"
+        aria-label="Drag to reorder category"
+        class="relative z-[1] hidden h-7 w-5 shrink-0 cursor-grab items-center justify-center rounded-[7px] text-gray-300 transition hover:bg-gray-950/[0.045] hover:text-gray-600 active:cursor-grabbing dark:text-gray-700 dark:hover:bg-white/[0.06] dark:hover:text-gray-300 sm:flex"
+        @dragstart.stop="onDragStart"
+        @dragend.stop="emit('drag-end')"
+      >
+        <svg viewBox="0 0 16 16" fill="currentColor" class="h-4 w-4" aria-hidden="true">
+          <circle cx="5" cy="4" r="1" />
+          <circle cx="11" cy="4" r="1" />
+          <circle cx="5" cy="8" r="1" />
+          <circle cx="11" cy="8" r="1" />
+          <circle cx="5" cy="12" r="1" />
+          <circle cx="11" cy="12" r="1" />
+        </svg>
+      </button>
+
+      <span v-else class="hidden h-7 w-5 shrink-0 sm:block" />
 
       <button
         v-if="hasChildren"
@@ -217,10 +292,18 @@ function directChildCount(category: Category) {
           :category="child"
           :level="level + 1"
           :expanded-ids="expandedIds"
+          :drag-enabled="dragEnabled"
+          :dragging-id="draggingId"
+          :drop-target-id="dropTargetId"
+          :drop-position="dropPosition"
           @toggle-expanded="emit('toggle-expanded', $event)"
           @open-create="emit('open-create', $event)"
           @open-edit="emit('open-edit', $event)"
           @ask-delete="emit('ask-delete', $event)"
+          @drag-start="emit('drag-start', $event)"
+          @drag-end="emit('drag-end')"
+          @drag-over="emit('drag-over', $event)"
+          @drop-category="emit('drop-category', $event)"
         />
       </div>
     </Transition>

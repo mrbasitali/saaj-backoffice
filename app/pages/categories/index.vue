@@ -62,6 +62,10 @@ const levelFilter = ref('all')
 const sortBy = ref('sort_order')
 
 const expandedIds = ref<number[]>([])
+const draggingCategoryId = ref<number | null>(null)
+const dragTargetId = ref<number | null>(null)
+const dragTargetPosition = ref<'before' | 'after' | null>(null)
+const reordering = ref(false)
 
 const filtersOpen = ref(false)
 
@@ -161,6 +165,8 @@ const visibleFilterCount = computed(() => {
  sortBy.value !== 'sort_order',
  ].filter(Boolean).length
 })
+
+const dragSortEnabled = computed(() => !hasActiveFilters.value && !reordering.value)
 
 const filteredTree = computed(() => {
  const prepared = sortTree(treeCategories.value)
@@ -358,6 +364,106 @@ function collapseAll() {
  expandedIds.value = []
 }
 
+function findCategoryById(items: Category[], categoryId: number): Category | null {
+ for (const item of items) {
+ if (item.id === categoryId) return item
+
+ if (item.children?.length) {
+ const found = findCategoryById(item.children, categoryId)
+ if (found) return found
+ }
+ }
+
+ return null
+}
+
+function siblingCategories(category: Category): Category[] {
+ if (category.parent_id === null) return sortTree(treeCategories.value)
+
+ const parent = findCategoryById(treeCategories.value, category.parent_id)
+ return parent?.children?.length ? sortTree(parent.children) : []
+}
+
+function startCategoryDrag(category: Category) {
+ if (!dragSortEnabled.value) return
+ draggingCategoryId.value = category.id
+ dragTargetId.value = null
+ dragTargetPosition.value = null
+}
+
+function clearCategoryDrag() {
+ draggingCategoryId.value = null
+ dragTargetId.value = null
+ dragTargetPosition.value = null
+}
+
+function overCategoryDropTarget(payload: { category: Category; position: 'before' | 'after' }) {
+ const sourceId = draggingCategoryId.value
+ if (!sourceId || sourceId === payload.category.id) {
+ dragTargetId.value = null
+ dragTargetPosition.value = null
+ return
+ }
+
+ const source = findCategoryById(treeCategories.value, sourceId)
+ if (!source || source.parent_id !== payload.category.parent_id) {
+ dragTargetId.value = null
+ dragTargetPosition.value = null
+ return
+ }
+
+ dragTargetId.value = payload.category.id
+ dragTargetPosition.value = payload.position
+}
+
+async function dropCategory(payload: { category: Category; position: 'before' | 'after' }) {
+ const sourceId = draggingCategoryId.value
+ const source = sourceId ? findCategoryById(treeCategories.value, sourceId) : null
+ const target = payload.category
+
+ if (!source || source.id === target.id || source.parent_id !== target.parent_id || reordering.value) {
+ clearCategoryDrag()
+ return
+ }
+
+ const siblings = siblingCategories(source)
+ const orderedIds = siblings.map(item => item.id).filter(id => id !== source.id)
+ const targetIndex = orderedIds.indexOf(target.id)
+
+ if (targetIndex < 0) {
+ clearCategoryDrag()
+ return
+ }
+
+ orderedIds.splice(targetIndex + (payload.position === 'after' ? 1 : 0), 0, source.id)
+
+ const unchanged = siblings.map(item => item.id).every((id, index) => id === orderedIds[index])
+ if (unchanged) {
+ clearCategoryDrag()
+ return
+ }
+
+ reordering.value = true
+
+ try {
+ await $api('/admin/categories/reorder', {
+ method: 'PUT',
+ body: {
+ parent_id: source.parent_id,
+ category_ids: orderedIds,
+ },
+ })
+
+ await refresh()
+ showNotice('Category order updated.')
+ } catch (error: any) {
+ showNotice(extractApiErrorMessage(error, 'Could not update category order.'))
+ } finally {
+ reordering.value = false
+ clearCategoryDrag()
+ }
+}
+
 function showNotice(message: string) {
  notice.value = message
 
@@ -528,7 +634,7 @@ function clearFilters() {
  dark:text-gray-500
  "
  >
- Organize the catalog into parent categories and nested subcategories. Navigation visibility and sort order here directly control the storefront menu, and visible descendants are nested automatically under their parent.
+ Organize the catalog into parent categories and nested subcategories. Drag the handle to reorder categories within the same level; the storefront menu follows this order automatically.
  </p>
 
  <div
@@ -1025,6 +1131,10 @@ function clearFilters() {
 
  total
  </span>
+
+ <span v-if="reordering" class="font-medium text-gray-700 dark:text-gray-300">Saving order…</span>
+ <span v-else-if="!dragSortEnabled">Clear filters and use Sort order to enable drag sorting.</span>
+ <span v-else>Drag categories to reorder them within the same parent.</span>
  </div>
  </section>
 
@@ -1077,10 +1187,18 @@ function clearFilters() {
  :key="category.id"
  :category="category"
  :expanded-ids="expandedIds"
+ :drag-enabled="dragSortEnabled"
+ :dragging-id="draggingCategoryId"
+ :drop-target-id="dragTargetId"
+ :drop-position="dragTargetPosition"
  @toggle-expanded="toggleExpanded"
  @open-create="openCreate"
  @open-edit="openEdit"
  @ask-delete="askDelete"
+ @drag-start="startCategoryDrag"
+ @drag-end="clearCategoryDrag"
+ @drag-over="overCategoryDropTarget"
+ @drop-category="dropCategory"
  />
  </div>
  </div>

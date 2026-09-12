@@ -72,6 +72,7 @@ type Product = {
  meta_description: string | null
  is_active: boolean
  is_featured: boolean
+ is_new_arrival: boolean
  sort_order: number
  published_at: string | null
  brand?: Brand | null
@@ -299,6 +300,7 @@ const form = reactive({
  meta_description: '',
  is_active: true,
  is_featured: false,
+ is_new_arrival: false,
  sort_order: 0,
  published_at: '',
 })
@@ -592,6 +594,10 @@ function resetForm() {
  props.product?.is_featured
  ?? false
 
+ form.is_new_arrival =
+ props.product?.is_new_arrival
+ ?? false
+
  form.sort_order =
  props.product?.sort_order
  ?? 0
@@ -693,6 +699,7 @@ function sectionForErrors(
  'published_at',
  'is_active',
  'is_featured',
+ 'is_new_arrival',
  ].includes(key),
  )
  ) {
@@ -808,6 +815,9 @@ function productPayload() {
 
  is_featured:
  form.is_featured,
+
+ is_new_arrival:
+ form.is_new_arrival,
 
  sort_order:
  Number(
@@ -1666,7 +1676,7 @@ async function previewStorefront() {
  "
  >
  Control visibility,
- featured placement and
+ New In placement and
  SEO information.
  </p>
  </div>
@@ -1677,7 +1687,7 @@ async function previewStorefront() {
  grid
  gap-4
 
- sm:grid-cols-2
+ sm:grid-cols-3
  "
  >
  <div
@@ -1717,6 +1727,26 @@ async function previewStorefront() {
  "
  label="Featured"
  description="Highlight in selected storefront sections."
+ />
+ </div>
+
+ <div
+ class="
+ rounded-[12px]
+
+ bg-gray-950/[0.035]
+
+ p-3.5
+
+ dark:bg-white/[0.055]
+ "
+ >
+ <AppToggle
+ v-model="
+ form.is_new_arrival
+ "
+ label="Show in New In"
+ description="Include this product on the storefront New In page. You can also manage many products at once from the Products list."
  />
  </div>
  </div>
