@@ -52,6 +52,7 @@ type Product = {
  brand_id: number | null
  name: string
  slug: string
+ slug_base?: string | null
  short_description: string | null
  description: string | null
  care_instructions: string | null
@@ -64,6 +65,7 @@ type Product = {
  published_at: string | null
  brand?: Brand | null
  categories?: Category[]
+ primary_category_id?: number | null
  primary_image?: ProductImage | null
  images?: ProductImage[]
  images_count?: number
@@ -2682,6 +2684,9 @@ function nextPage() {
  "
  :product-name="
  variantsPanelProduct.name
+ "
+ :primary-category-id="
+ variantsPanelProduct.primary_category_id
  "
  :brand-name="
  variantsPanelProduct.brand?.name

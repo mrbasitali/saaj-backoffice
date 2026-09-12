@@ -4,12 +4,22 @@ definePageMeta({
  layout: 'admin',
 })
 
+type CategoryFaq = {
+ id?: number
+ question: string
+ answer: string
+ is_active: boolean
+ sort_order: number
+}
+
 type Category = {
  id: number
  parent_id: number | null
  name: string
  slug: string
  full_slug: string
+ code?: string | null
+ sku_year_enabled?: boolean
  description: string | null
  icon_url: string | null
  icon_public_id?: string | null
@@ -19,6 +29,10 @@ type Category = {
  banner_image_public_id?: string | null
  meta_title: string | null
  meta_description: string | null
+ seo_content?: string | null
+ seo_is_published?: boolean
+ faqs_is_published?: boolean
+ faqs?: CategoryFaq[] | null
  is_active: boolean
  show_in_menu: boolean
  show_on_home: boolean
@@ -27,6 +41,10 @@ type Category = {
  children?: Category[] | null
  created_at?: string | null
  updated_at?: string | null
+}
+
+type CategoryResponse = {
+ data: Category
 }
 
 type CategoryTreeResponse = {
@@ -68,9 +86,9 @@ const activeOptions = [
 ]
 
 const menuOptions = [
- { label: 'All menu visibility', value: 'all' },
- { label: 'Visible in menu', value: 'yes' },
- { label: 'Hidden from menu', value: 'no' },
+ { label: 'All navigation visibility', value: 'all' },
+ { label: 'Visible in navigation', value: 'yes' },
+ { label: 'Hidden from navigation', value: 'no' },
 ]
 
 const homeOptions = [
@@ -382,6 +400,21 @@ function openEdit(category: Category) {
  selectedCategory.value = category
  formMode.value = 'edit'
  formOpen.value = true
+
+ // The tree/list payload doesn't carry FAQ rows at every depth, so pull
+ // the full record (which does) before the admin starts editing.
+ $api<CategoryResponse>(`/admin/categories/${category.id}`)
+ .then((response) => {
+ if (
+ selectedCategory.value?.id === category.id
+ ) {
+ selectedCategory.value = response.data
+ }
+ })
+ .catch(() => {
+ // Keep the tree data already shown; the form still works,
+ // just without the FAQ rows pre-filled.
+ })
 }
 
 async function afterSaved() {
@@ -495,8 +528,7 @@ function clearFilters() {
  dark:text-gray-500
  "
  >
- Organize the catalog into parent
- categories and nested subcategories.
+ Organize the catalog into parent categories and nested subcategories. Navigation visibility and sort order here directly control the storefront menu, and visible descendants are nested automatically under their parent.
  </p>
 
  <div

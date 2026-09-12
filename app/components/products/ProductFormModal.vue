@@ -51,6 +51,7 @@ type ProductImage = {
 
 type DefaultVariant = {
  id: number
+ sku?: string
  price: number | string
  sale_price: number | string | null
  compare_at_price?: number | string | null
@@ -62,6 +63,7 @@ type Product = {
  brand_id: number | null
  name: string
  slug: string
+ slug_base?: string | null
  short_description: string | null
  description: string | null
  care_instructions: string | null
@@ -171,6 +173,115 @@ const selectedCategoryIds =
 const primaryCategoryId =
  ref<number | null>(null)
 
+const skuPreview = ref('')
+const skuPreviewChain = ref<string[]>([])
+const skuPreviewLoading = ref(false)
+let skuPreviewToken = 0
+
+function stripHyphens(value: string) {
+ return value.toLowerCase().replace(/-/g, '')
+}
+
+const skuPreviewSuffix = computed(() => {
+ return skuPreview.value
+ ? `-${stripHyphens(skuPreview.value)}`
+ : ''
+})
+
+const skuPreviewTitle = computed(() => {
+ return skuPreviewChain.value.length
+ ? `Built from: ${skuPreviewChain.value.join(' → ')}`
+ : 'Appended automatically. Not editable.'
+})
+
+// In edit mode there's nothing to "preview" — the suffix is whatever the
+// product's default variant SKU already is, shown so the admin can see
+// exactly what's at the end of the live slug without it being editable
+// here.
+const skuSuffixDisplay = computed(() => {
+ if (props.mode === 'edit') {
+ const sku =
+ props.product?.default_variant?.sku
+
+ return sku
+ ? `-${stripHyphens(sku)}`
+ : ''
+ }
+
+ return skuPreviewSuffix.value
+})
+
+const slugTouched = ref(false)
+let settingSlugFromName = false
+
+function slugify(value: string) {
+ return value
+ .toLowerCase()
+ .trim()
+ .replace(/[^a-z0-9]+/g, '-')
+ .replace(/^-+|-+$/g, '')
+}
+
+async function refreshSkuPreview() {
+ if (props.mode !== 'create') {
+ skuPreview.value = ''
+ skuPreviewChain.value = []
+ return
+ }
+
+ const categoryId =
+ primaryCategoryId.value ??
+ selectedCategoryIds.value[0] ??
+ null
+
+ if (!categoryId) {
+ skuPreview.value = ''
+ skuPreviewChain.value = []
+ return
+ }
+
+ const token = ++skuPreviewToken
+ skuPreviewLoading.value = true
+
+ try {
+ const response = await $api<{
+ data: { sku: string | null, chain?: string[] }
+ }>(
+ `/admin/categories/${categoryId}/next-sku`,
+ )
+
+ if (token === skuPreviewToken) {
+ skuPreview.value =
+ response.data.sku ?? ''
+ skuPreviewChain.value =
+ response.data.chain ?? []
+ }
+ } catch {
+ if (token === skuPreviewToken) {
+ skuPreview.value = ''
+ skuPreviewChain.value = []
+ }
+ } finally {
+ if (token === skuPreviewToken) {
+ skuPreviewLoading.value = false
+ }
+ }
+}
+
+watch(
+ () =>
+ [
+ primaryCategoryId.value,
+ selectedCategoryIds.value.join(','),
+ props.open,
+ ] as const,
+ () => {
+ if (props.open) {
+ refreshSkuPreview()
+ }
+ },
+)
+
 const newImages =
  ref<ProductImageDraft[]>([])
 
@@ -191,6 +302,34 @@ const form = reactive({
  sort_order: 0,
  published_at: '',
 })
+
+// Keeps the slug's editable base in sync with the name while the admin is
+// creating a product — right up until they type into the slug field
+// themselves, at which point their edit wins from then on.
+watch(
+ () => form.name,
+ (name) => {
+ if (
+ props.mode === 'create' &&
+ !slugTouched.value
+ ) {
+ settingSlugFromName = true
+ form.slug = slugify(name)
+ nextTick(() => {
+ settingSlugFromName = false
+ })
+ }
+ },
+)
+
+watch(
+ () => form.slug,
+ () => {
+ if (!settingSlugFromName) {
+ slugTouched.value = true
+ }
+ },
+)
 
 const isSimpleProduct = computed(() => {
  if (props.mode === 'create') {
@@ -386,7 +525,13 @@ function resetForm() {
  props.product?.name ?? ''
 
  form.slug =
- props.product?.slug ?? ''
+ (props.mode === 'edit'
+ ? props.product?.slug_base
+ : props.product?.slug)
+ ?? ''
+
+ slugTouched.value =
+ props.mode === 'edit'
 
  form.short_description =
  props.product
@@ -1065,7 +1210,30 @@ async function previewStorefront() {
  :error="
  fieldErrors.slug
  "
- />
+ >
+ <template #suffix>
+ <span
+ v-if="mode === 'create' && skuPreviewLoading"
+ class="text-[12px] italic"
+ >
+ …
+ </span>
+ <span
+ v-else-if="skuSuffixDisplay"
+ class="whitespace-nowrap font-mono text-[12px]"
+ :title="skuPreviewTitle"
+ >
+ {{ skuSuffixDisplay }}
+ </span>
+ </template>
+ </AppInput>
+
+ <p
+ v-if="mode === 'create'"
+ class="mt-1 text-[11px] text-gray-400 dark:text-gray-600"
+ >
+ Fills in from the name automatically until you edit it yourself. The greyed-out part at the end is added on save and can't be typed — it comes from the category you pick below.
+ </p>
 
  <AppSelect
  v-model="form.brand_id"

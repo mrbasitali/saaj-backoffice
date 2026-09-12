@@ -471,6 +471,39 @@ function buttonClass(active: boolean) {
  </button>
 
  <button
+ v-if="!isSimple"
+ type="button"
+ title="Strikethrough"
+ class="
+ flex
+ h-7
+ min-w-7
+ items-center
+ justify-center
+
+ rounded-[7px]
+
+ px-1.5
+
+ text-[12px]
+ font-semibold
+ line-through
+
+ transition
+ "
+ :class="buttonClass(isActive('strike'))"
+ @click="
+ editor
+ .chain()
+ .focus()
+ .toggleStrike()
+ .run()
+ "
+ >
+ S
+ </button>
+
+ <button
  v-if="props.weightControl"
  type="button"
  title="Light weight"
@@ -512,6 +545,33 @@ function buttonClass(active: boolean) {
  dark:bg-white/10
  "
  />
+
+ <button
+ type="button"
+ title="Paragraph"
+ class="
+ h-7
+
+ rounded-[7px]
+
+ px-2
+
+ text-[11px]
+ font-semibold
+
+ transition
+ "
+ :class="buttonClass(isActive('paragraph'))"
+ @click="
+ editor
+ .chain()
+ .focus()
+ .setParagraph()
+ .run()
+ "
+ >
+ Text
+ </button>
 
  <button
  type="button"

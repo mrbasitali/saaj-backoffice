@@ -154,7 +154,7 @@ function directChildCount(category: Category) {
           <p class="text-[12px] font-medium text-gray-600 dark:text-gray-400">
             {{ category.show_in_menu ? 'Visible' : 'Hidden' }}
           </p>
-          <p class="text-[11px] text-gray-400 dark:text-gray-600">menu</p>
+          <p class="text-[11px] text-gray-400 dark:text-gray-600">navigation</p>
         </div>
         <div class="min-w-[78px] text-right">
           <p class="text-[12px] font-medium text-gray-600 dark:text-gray-400">
@@ -200,7 +200,7 @@ function directChildCount(category: Category) {
       <span>{{ directChildCount(category) }} children</span>
       <span>{{ childCount(category) }} nested</span>
       <span>Sort {{ category.sort_order }}</span>
-      <span>{{ category.show_in_menu ? 'Menu visible' : 'Menu hidden' }}</span>
+      <span>{{ category.show_in_menu ? 'Navigation visible' : 'Navigation hidden' }}</span>
       <span>{{ category.show_on_home ? 'Home visible' : 'Home hidden' }}</span>
     </div>
 

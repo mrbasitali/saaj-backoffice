@@ -1,16 +1,30 @@
 <script setup lang="ts">
+type CategoryFaq = {
+ id?: number
+ question: string
+ answer: string
+ is_active: boolean
+ sort_order: number
+}
+
 type Category = {
  id: number
  parent_id: number | null
  name: string
  slug: string
  full_slug: string
+ code: string | null
+ sku_year_enabled: boolean
  description: string | null
  icon_url: string | null
  image_url: string | null
  banner_image_url: string | null
  meta_title: string | null
  meta_description: string | null
+ seo_content: string | null
+ seo_is_published: boolean
+ faqs_is_published: boolean
+ faqs?: CategoryFaq[] | null
  is_active: boolean
  show_in_menu: boolean
  show_on_home: boolean
@@ -28,6 +42,7 @@ type CategorySection =
  | 'details'
  | 'media'
  | 'seo'
+ | 'faqs'
 
 const props = defineProps<{
  open: boolean
@@ -62,6 +77,10 @@ const sections: {
  key: 'seo',
  label: 'SEO',
  },
+ {
+ key: 'faqs',
+ label: 'FAQs',
+ },
 ]
 
 const sectionTabs = computed(() => {
@@ -86,14 +105,48 @@ const form = reactive({
 
  name: '',
  slug: '',
+ code: '',
+ sku_year_enabled: false,
  description: '',
  meta_title: '',
  meta_description: '',
+ seo_content: '' as string | null,
+ seo_is_published: false,
+ faqs_is_published: false,
  is_active: true,
  show_in_menu: true,
  show_on_home: false,
  sort_order: 0,
 })
+
+let faqKeySeed = 0
+
+const faqs = ref<(CategoryFaq & { _key: number })[]>([])
+
+function addFaq() {
+ faqs.value.push({
+ _key: ++faqKeySeed,
+ question: '',
+ answer: '',
+ is_active: true,
+ sort_order: faqs.value.length,
+ })
+}
+
+function removeFaq(index: number) {
+ faqs.value.splice(index, 1)
+}
+
+function moveFaq(index: number, direction: -1 | 1) {
+ const target = index + direction
+
+ if (target < 0 || target >= faqs.value.length) {
+ return
+ }
+
+ const [item] = faqs.value.splice(index, 1)
+ faqs.value.splice(target, 0, item)
+}
 
 const iconFile =
  ref<File | null>(null)
@@ -244,6 +297,13 @@ function resetForm() {
  form.slug =
  props.category?.slug ?? ''
 
+ form.code =
+ props.category?.code ?? ''
+
+ form.sku_year_enabled =
+ props.category?.sku_year_enabled ??
+ false
+
  form.description =
  props.category?.description ??
  ''
@@ -256,6 +316,25 @@ function resetForm() {
  props.category
  ?.meta_description ??
  ''
+
+ form.seo_content =
+ props.category?.seo_content ??
+ ''
+
+ form.seo_is_published =
+ props.category?.seo_is_published ??
+ false
+
+ form.faqs_is_published =
+ props.category?.faqs_is_published ??
+ false
+
+ faqs.value = (
+ props.category?.faqs ?? []
+ ).map((faq) => ({
+ ...faq,
+ _key: ++faqKeySeed,
+ }))
 
  form.is_active =
  props.category?.is_active ??
@@ -433,6 +512,19 @@ function buildFormData() {
 
  appendIfFilled(
  data,
+ 'code',
+ form.code,
+ )
+
+ data.append(
+ 'sku_year_enabled',
+ form.sku_year_enabled
+ ? '1'
+ : '0',
+ )
+
+ appendIfFilled(
+ data,
  'description',
  form.description,
  )
@@ -448,6 +540,60 @@ function buildFormData() {
  'meta_description',
  form.meta_description,
  )
+
+ appendIfFilled(
+ data,
+ 'seo_content',
+ form.seo_content,
+ )
+
+ data.append(
+ 'seo_is_published',
+ form.seo_is_published
+ ? '1'
+ : '0',
+ )
+
+ data.append(
+ 'faqs_is_published',
+ form.faqs_is_published
+ ? '1'
+ : '0',
+ )
+
+ data.append(
+ 'faqs_count',
+ String(faqs.value.length),
+ )
+
+ faqs.value.forEach((faq, index) => {
+ if (faq.id) {
+ data.append(
+ `faqs[${index}][id]`,
+ String(faq.id),
+ )
+ }
+
+ data.append(
+ `faqs[${index}][question]`,
+ faq.question,
+ )
+
+ data.append(
+ `faqs[${index}][answer]`,
+ faq.answer,
+ )
+
+ data.append(
+ `faqs[${index}][is_active]`,
+ faq.is_active ? '1' : '0',
+ )
+
+ data.append(
+ `faqs[${index}][sort_order]`,
+ String(index),
+ )
+ })
 
  data.append(
  'is_active',
@@ -543,11 +689,21 @@ function sectionForErrors(
  }
 
  if (
+ keys.some((key) =>
+ key.startsWith('faqs'),
+ )
+ ) {
+ return 'faqs'
+ }
+
+ if (
  keys.some(
  (key) =>
  [
  'meta_title',
  'meta_description',
+ 'seo_content',
+ 'seo_is_published',
  ].includes(key),
  )
  ) {
@@ -752,6 +908,16 @@ onBeforeUnmount(() => {
  "
  />
 
+ <AppInput
+ v-model="form.code"
+ label="Category code"
+ placeholder="e.g. WN"
+ :error="
+ fieldErrors.code
+ "
+ required
+ />
+
  <AppSelect
  v-model="
  form.parent_id
@@ -767,13 +933,33 @@ onBeforeUnmount(() => {
  v-model="
  form.sort_order
  "
- label="Sort order"
+ label="Menu / display order"
  type="number"
  placeholder="0"
  :error="
  fieldErrors
  .sort_order
  "
+ />
+ </div>
+
+ <div
+ class="
+ mt-4
+
+ rounded-[12px]
+
+ bg-gray-950/[0.035]
+
+ p-3.5
+
+ dark:bg-white/[0.055]
+ "
+ >
+ <AppToggle
+ v-model="form.sku_year_enabled"
+ label="Include year in SKU"
+ description="When this category is the most specific one on a product, its SKU segment gets the current 2-digit year appended (e.g. LW → LW26)."
  />
  </div>
 
@@ -837,8 +1023,8 @@ onBeforeUnmount(() => {
  v-model="
  form.show_in_menu
  "
- label="Show in menu"
- description="Include this category in navigation menus."
+ label="Show in navigation"
+ description="Include this category in desktop and mobile menus. Menu-visible children are nested beneath it automatically."
  />
  </div>
 
@@ -861,6 +1047,26 @@ onBeforeUnmount(() => {
  description="Include this category in the homepage category section, regardless of parent or child level."
  />
  </div>
+
+ <Transition name="category-reveal">
+ <div
+ v-if="form.show_in_menu"
+ class="mt-1 flex items-start gap-3 rounded-[12px] bg-gray-950/[0.025] px-3.5 py-3 dark:bg-white/[0.035] sm:col-span-3"
+ >
+ <span class="mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-gray-950/[0.055] text-gray-500 dark:bg-white/[0.07] dark:text-gray-400">
+ <svg class="h-3 w-3" viewBox="0 0 20 20" fill="none">
+ <path d="M10 6.5V10.5M10 13.5H10.01" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+ <circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="1.35" />
+ </svg>
+ </span>
+ <div>
+ <p class="text-[12px] font-semibold text-gray-700 dark:text-gray-300">Navigation hierarchy</p>
+ <p class="mt-1 max-w-[720px] text-[11px] leading-5 text-gray-500 dark:text-gray-500">
+ This category becomes a menu level. Every active child with “Show in navigation” enabled appears beneath it automatically, including deeper subcategories. Lower menu / display order values appear first among siblings. Keep parent levels visible when you want visitors to drill down to their children.
+ </p>
+ </div>
+ </div>
+ </Transition>
  </div>
  </section>
 
@@ -1348,7 +1554,10 @@ onBeforeUnmount(() => {
 
  <!-- SEO -->
  <section
- v-else
+ v-else-if="
+ activeSection ===
+ 'seo'
+ "
  class="w-full"
  >
  <div>
@@ -1361,7 +1570,7 @@ onBeforeUnmount(() => {
  dark:text-gray-100
  "
  >
- Search appearance
+ Search & category content
  </h3>
 
  <p
@@ -1375,58 +1584,113 @@ onBeforeUnmount(() => {
  dark:text-gray-500
  "
  >
- Customize how this
- category appears in
- search results.
+ Control search metadata separately from the optional rich content shown on the category page.
  </p>
  </div>
 
  <div
  class="
  mt-5
- space-y-4
+ rounded-[14px]
+ border
+ border-gray-950/[0.06]
+ p-4
+ dark:border-white/[0.08]
  "
  >
+ <div class="mb-4">
+ <p class="text-[12px] font-semibold text-gray-800 dark:text-gray-200">
+ Search metadata
+ </p>
+ <p class="mt-1 text-[11px] leading-5 text-gray-400 dark:text-gray-500">
+ Used by search engines and social previews. This stays editable whether storefront content is enabled or not.
+ </p>
+ </div>
+
+ <div class="space-y-4">
  <AppInput
- v-model="
- form.meta_title
- "
+ v-model="form.meta_title"
  label="Meta title"
- placeholder="SEO title"
- :error="
- fieldErrors
- .meta_title
- "
+ placeholder="Example: Women's Clothing & Latest Collections"
+ :error="fieldErrors.meta_title"
  />
 
  <AppTextarea
- v-model="
- form.meta_description
- "
+ v-model="form.meta_description"
  label="Meta description"
- placeholder="SEO description"
- :rows="4"
- :error="
- fieldErrors
- .meta_description
- "
+ placeholder="Write a concise description for search results..."
+ :rows="3"
+ :error="fieldErrors.meta_description"
  />
  </div>
+ </div>
+
+ <div
+ class="
+ mt-4
+ rounded-[14px]
+ bg-gray-950/[0.035]
+ p-4
+ dark:bg-white/[0.055]
+ "
+ >
+ <AppToggle
+ v-model="form.seo_is_published"
+ label="Show SEO content on storefront"
+ description="Turn this on to add a formatted content section below the product listing. Turn it off to keep the saved content as a draft."
+ />
+ </div>
+
+ <Transition name="category-reveal">
+ <div
+ v-if="form.seo_is_published"
+ class="mt-4"
+ >
+ <div
+ class="
+ rounded-[14px]
+ border
+ border-gray-950/[0.06]
+ p-4
+ dark:border-white/[0.08]
+ "
+ >
+ <div class="mb-3 flex items-start justify-between gap-3">
+ <div>
+ <p class="text-[12px] font-semibold text-gray-800 dark:text-gray-200">
+ Storefront content
+ </p>
+ <p class="mt-1 text-[11px] leading-5 text-gray-400 dark:text-gray-500">
+ Use headings, paragraphs, emphasis, lists and quotes. The storefront keeps the same hierarchy and spacing.
+ </p>
+ </div>
+ <span
+ class="rounded-full bg-emerald-500/10 px-2 py-1 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400"
+ >
+ Visible
+ </span>
+ </div>
+
+ <AppRichTextEditor
+ v-model="form.seo_content"
+ placeholder="Start with a short introduction, then add headings and useful category information..."
+ :error="fieldErrors.seo_content"
+ />
+ </div>
+ </div>
+ </Transition>
 
  <!-- Search preview -->
  <div
  class="
  mt-6
-
  rounded-[14px]
-
  bg-gray-950/[0.025]
-
  p-4
-
  dark:bg-white/[0.035]
  "
  >
+ <div class="flex items-center justify-between gap-3">
  <p
  class="
  text-[11px]
@@ -1434,65 +1698,232 @@ onBeforeUnmount(() => {
  uppercase
  tracking-[0.08em]
  text-gray-400
-
  dark:text-gray-600
  "
  >
- Preview
+ Search preview
  </p>
+ <span class="text-[10px] text-gray-400 dark:text-gray-600">Approximate appearance</span>
+ </div>
 
  <p
  class="
  mt-3
-
  text-[14px]
  font-medium
  text-blue-700
-
  dark:text-blue-400
  "
  >
- {{
- form.meta_title ||
- form.name ||
- 'Category title'
- }}
+ {{ form.meta_title || form.name || 'Category title' }}
  </p>
 
- <p
- class="
- mt-1
-
- text-[11px]
- text-emerald-700
-
- dark:text-emerald-500
- "
- >
- /{{
- form.slug ||
- 'category-slug'
- }}
+ <p class="mt-1 text-[11px] text-emerald-700 dark:text-emerald-500">
+ /{{ form.slug || 'category-slug' }}
  </p>
 
  <p
  class="
  mt-2
-
  max-w-2xl
-
  text-[12px]
  leading-5
  text-gray-500
-
  dark:text-gray-500
  "
  >
- {{
- form.meta_description ||
- form.description ||
- 'Category description will appear here.'
- }}
+ {{ form.meta_description || form.description || 'Category description will appear here.' }}
+ </p>
+ </div>
+ </section>
+
+ <!-- FAQS -->
+ <section
+ v-else
+ class="w-full"
+ >
+ <div>
+ <h3 class="text-[14px] font-semibold text-gray-900 dark:text-gray-100">
+ Frequently asked questions
+ </h3>
+ <p class="mt-1 text-[12px] leading-5 text-gray-400 dark:text-gray-500">
+ Add helpful answers that customers can expand on the category page.
+ </p>
+ </div>
+
+ <div
+ class="
+ mt-5
+ rounded-[14px]
+ bg-gray-950/[0.035]
+ p-4
+ dark:bg-white/[0.055]
+ "
+ >
+ <AppToggle
+ v-model="form.faqs_is_published"
+ label="Show FAQs on storefront"
+ description="Turn this on to manage and publish the FAQ accordion for this category. Turning it off keeps your questions saved as a draft."
+ />
+ </div>
+
+ <Transition name="category-reveal">
+ <div
+ v-if="form.faqs_is_published"
+ class="mt-4"
+ >
+ <div class="flex items-center justify-between gap-3">
+ <div>
+ <p class="text-[12px] font-semibold text-gray-800 dark:text-gray-200">
+ FAQ content
+ </p>
+ <p class="mt-1 text-[11px] leading-5 text-gray-400 dark:text-gray-500">
+ {{ faqs.length ? `${faqs.length} question${faqs.length === 1 ? '' : 's'} added` : 'No questions added yet' }}
+ </p>
+ </div>
+
+ <AppButton
+ type="button"
+ size="sm"
+ @click="addFaq"
+ >
+ + Add FAQ
+ </AppButton>
+ </div>
+
+ <div
+ v-if="!faqs.length"
+ class="
+ mt-4
+ flex
+ min-h-[150px]
+ flex-col
+ items-center
+ justify-center
+ rounded-[14px]
+ border
+ border-dashed
+ border-gray-950/[0.12]
+ px-5
+ text-center
+ dark:border-white/[0.12]
+ "
+ >
+ <div class="flex h-9 w-9 items-center justify-center rounded-full bg-gray-950/[0.05] text-[18px] text-gray-500 dark:bg-white/[0.07] dark:text-gray-400">
+ ?
+ </div>
+ <p class="mt-3 text-[12px] font-semibold text-gray-700 dark:text-gray-300">
+ Add your first FAQ
+ </p>
+ <p class="mt-1 max-w-[390px] text-[11px] leading-5 text-gray-400 dark:text-gray-500">
+ Keep questions short and specific. Answers can use rich formatting such as bold text, headings and lists.
+ </p>
+ <AppButton
+ type="button"
+ variant="ghost"
+ size="sm"
+ class="mt-3"
+ @click="addFaq"
+ >
+ Add first question
+ </AppButton>
+ </div>
+
+ <div
+ v-else
+ class="mt-4 space-y-3"
+ >
+ <div
+ v-for="(faq, index) in faqs"
+ :key="faq._key"
+ class="
+ rounded-[14px]
+ border
+ border-gray-950/[0.07]
+ bg-white
+ p-4
+ dark:border-white/[0.08]
+ dark:bg-white/[0.025]
+ "
+ >
+ <div class="flex items-center justify-between gap-3">
+ <div class="flex items-center gap-2.5">
+ <span class="flex h-6 min-w-6 items-center justify-center rounded-full bg-gray-950/[0.055] px-1.5 text-[10px] font-semibold text-gray-500 dark:bg-white/[0.07] dark:text-gray-400">
+ {{ index + 1 }}
+ </span>
+ <span class="text-[11px] font-semibold uppercase tracking-[0.07em] text-gray-400 dark:text-gray-600">
+ FAQ
+ </span>
+ </div>
+
+ <div class="flex items-center gap-1">
+ <AppButton
+ type="button"
+ variant="ghost"
+ size="sm"
+ :disabled="index === 0"
+ title="Move up"
+ @click="moveFaq(index, -1)"
+ >
+ ↑
+ </AppButton>
+ <AppButton
+ type="button"
+ variant="ghost"
+ size="sm"
+ :disabled="index === faqs.length - 1"
+ title="Move down"
+ @click="moveFaq(index, 1)"
+ >
+ ↓
+ </AppButton>
+ <AppButton
+ type="button"
+ variant="ghost"
+ size="sm"
+ @click="removeFaq(index)"
+ >
+ Remove
+ </AppButton>
+ </div>
+ </div>
+
+ <div class="mt-4 space-y-3">
+ <AppInput
+ v-model="faq.question"
+ label="Question"
+ placeholder="Example: How do I choose the right size?"
+ :error="fieldErrors[`faqs.${index}.question`]"
+ required
+ />
+
+ <AppRichTextEditor
+ v-model="faq.answer"
+ label="Answer"
+ placeholder="Write a clear answer. You can use emphasis, headings or a short list where helpful..."
+ compact
+ :error="fieldErrors[`faqs.${index}.answer`]"
+ />
+
+ <div class="rounded-[12px] bg-gray-950/[0.03] p-3 dark:bg-white/[0.04]">
+ <AppToggle
+ v-model="faq.is_active"
+ label="Active question"
+ description="Disable only this question without deleting it."
+ />
+ </div>
+ </div>
+ </div>
+ </div>
+ </div>
+ </Transition>
+
+ <div
+ v-if="!form.faqs_is_published"
+ class="mt-4 rounded-[12px] border border-dashed border-gray-950/[0.09] px-4 py-5 text-center dark:border-white/[0.09]"
+ >
+ <p class="text-[11px] leading-5 text-gray-400 dark:text-gray-500">
+ FAQ content is currently hidden. Enable the section above when you want to add or edit storefront FAQs.
  </p>
  </div>
  </section>
@@ -1530,5 +1961,19 @@ onBeforeUnmount(() => {
  </AppButton>
  </div>
  </template>
+
  </AppModal>
 </template>
+
+<style scoped>
+.category-reveal-enter-active,
+.category-reveal-leave-active {
+ transition: opacity 180ms ease, transform 180ms ease;
+}
+
+.category-reveal-enter-from,
+.category-reveal-leave-to {
+ opacity: 0;
+ transform: translateY(-4px);
+}
+</style>

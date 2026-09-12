@@ -73,6 +73,7 @@ const props = defineProps<{
  mode: 'create' | 'edit'
  productId: number
  productName: string
+ primaryCategoryId?: number | null
  brandName?: string | null
  brandLogoUrl?: string | null
  cardDescription?: string | null
@@ -361,7 +362,7 @@ function slugPart(
  )
 }
 
-function generateSku() {
+function legacySku() {
  const productPart = slugPart(
  props.productName,
  6,
@@ -384,7 +385,7 @@ function generateSku() {
  .filter(Boolean)
  .join('-')
 
- form.sku = [
+ return [
  productPart,
  optionPart,
  randomSuffix(4),
@@ -393,9 +394,42 @@ function generateSku() {
  .join('-')
 }
 
-function useSkuAsBarcode() {
+const generatingSku = ref(false)
+const generatedSkuChain = ref<string[]>([])
+
+async function generateSku() {
+ if (!props.primaryCategoryId) {
+ // No category to derive a code from (shouldn't normally happen,
+ // since products require at least one category) — fall back so
+ // the button still does something useful.
+ form.sku = legacySku()
+ generatedSkuChain.value = []
+ return
+ }
+
+ generatingSku.value = true
+
+ try {
+ const response = await $api<{
+ data: { sku: string | null, chain?: string[] }
+ }>(
+ `/admin/categories/${props.primaryCategoryId}/next-sku`,
+ { method: 'POST' },
+ )
+
+ form.sku = response.data.sku ?? legacySku()
+ generatedSkuChain.value = response.data.chain ?? []
+ } catch {
+ form.sku = legacySku()
+ generatedSkuChain.value = []
+ } finally {
+ generatingSku.value = false
+ }
+}
+
+async function useSkuAsBarcode() {
  if (!form.sku) {
- generateSku()
+ await generateSku()
  }
 
  form.barcode = form.sku
@@ -808,13 +842,28 @@ async function submit() {
 
  hover:text-gray-700
 
+ disabled:cursor-not-allowed
+ disabled:opacity-60
+
  dark:text-gray-600
  dark:hover:text-gray-300
  "
+ :disabled="generatingSku"
  @click="generateSku"
  >
- Generate from product + options
+ {{
+ generatingSku
+ ? 'Generating…'
+ : 'Generate from product + options'
+ }}
  </button>
+
+ <p
+ v-if="generatedSkuChain.length"
+ class="mt-1 text-[10px] text-gray-400 dark:text-gray-600"
+ >
+ Built from: {{ generatedSkuChain.join(' → ') }}
+ </p>
  </div>
 
  <div>

@@ -9,6 +9,7 @@ const props = defineProps<{
  open: boolean
  productId: number
  productName: string
+ primaryCategoryId?: number | null
  brandName?: string | null
  brandLogoUrl?: string | null
  cardDescription?: string | null
@@ -1442,6 +1443,7 @@ onBeforeUnmount(() => {
  :mode="formMode"
  :product-id="productId"
  :product-name="productName"
+ :primary-category-id="primaryCategoryId"
  :brand-name="brandName"
  :brand-logo-url="brandLogoUrl"
  :card-description="cardDescription"
