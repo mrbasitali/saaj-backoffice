@@ -132,19 +132,19 @@ const { $api } = useNuxtApp()
 const { toDateTimeInput, dateTimeInputToIso, timezoneLabel } = useAppDateTime()
 
 const activeSection =
- ref<ProductSection>('details')
+ ref<ProductSection>('categories')
 
 const sections: {
  key: ProductSection
  label: string
 }[] = [
  {
- key: 'details',
- label: 'Details',
- },
- {
  key: 'categories',
  label: 'Categories',
+ },
+ {
+ key: 'details',
+ label: 'Details',
  },
  {
  key: 'content',
@@ -444,6 +444,55 @@ const quickSalePriceError = computed(() => {
   : ''
 })
 
+// Validate the required fields across tabs before allowing a save.
+// Price remains optional, as in the existing product payload.
+const productValidationErrors = computed<Record<string, string>>(() => {
+ const errors: Record<string, string> = {}
+ if (!selectedCategoryIds.value.length) errors.category_ids = 'Choose at least one category.'
+ if (!String(form.name ?? '').trim()) errors.name = 'Enter a product name.'
+
+ if (isSimpleProduct.value) {
+ const price = String(form.price ?? '').trim()
+ const salePrice = String(form.sale_price ?? '').trim()
+ if (price && (!Number.isFinite(Number(price)) || Number(price) < 0)) {
+ errors.price = 'Original price must be zero or more.'
+ }
+ if (salePrice) {
+ if (!price) errors.price = 'Enter an original price before adding a sale price.'
+ if (!Number.isFinite(Number(salePrice)) || Number(salePrice) < 0) {
+ errors.sale_price = 'Sale price must be zero or more.'
+ } else if (quickSalePriceError.value) {
+ errors.sale_price = quickSalePriceError.value
+ }
+ }
+ }
+ return errors
+})
+
+const canSubmitProduct = computed(() => Object.keys(productValidationErrors.value).length === 0)
+const canAdvanceSection = computed(() => !Object.entries(productValidationErrors.value).some(
+ ([field, message]) => sectionForErrors({ [field]: message }) === activeSection.value,
+))
+const saveHint = computed(() => {
+ const missing = []
+ if (!selectedCategoryIds.value.length) missing.push('category')
+ if (!String(form.name ?? '').trim()) missing.push('product name')
+ if (missing.length) return `Required: ${missing.join(' and ')}.`
+ if (!canSubmitProduct.value) return 'Check the price fields in Details.'
+ if (skuPreviewLoading.value) return 'Preparing the SKU suggestion…'
+ return props.mode === 'create' ? 'Ready to create. Other sections are optional.' : ''
+})
+
+function onFormSubmit() {
+ if (saving.value || previewing.value) return
+ const index = sections.findIndex(section => section.key === activeSection.value)
+ if (props.mode === 'create' && index < sections.length - 1) {
+ if (canAdvanceSection.value) setActiveSection(sections[index + 1]!.key)
+ return
+ }
+ submit(false)
+}
+
 function money(value: number) {
  return `Rs ${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}`
 }
@@ -535,7 +584,7 @@ watch(
  (open, previous) => {
  if (open && !previous) {
  activeSection.value =
- 'details'
+ 'categories'
 
  localNotice.value = ''
  studioOpen.value = false
@@ -960,15 +1009,8 @@ function buildFormData() {
 async function submit(
  closeAfterSave = false,
 ): Promise<Product | null> {
- if (quickSalePriceError.value) {
-  activeSection.value = 'details'
-  fieldErrors.value = {
-   ...fieldErrors.value,
-   sale_price: quickSalePriceError.value,
-  }
-  formError.value = quickSalePriceError.value
-  return null
- }
+ // The live footer hint explains incomplete fields, including keyboard submits.
+ if (saving.value || skuPreviewLoading.value || !canSubmitProduct.value) return null
 
  saving.value = true
  formError.value = ''
@@ -1119,13 +1161,13 @@ async function previewStorefront() {
  :title="title"
  :description="description"
  max-width="max-w-[1280px]"
+ fixed-height
+ :scroll-key="activeSection"
  @close="emit('close')"
  >
  <form
  id="product-editor-form"
- @submit.prevent="
- submit(false)
- "
+ @submit.prevent="onFormSubmit"
  >
  <!-- Tabs -->
  <div
@@ -1226,9 +1268,39 @@ async function previewStorefront() {
  {{ formError }}
  </div>
 
- <!-- DETAILS -->
+ <!-- CATEGORIES -->
  <div
  v-if="
+ activeSection
+ === 'categories'
+ "
+ class="w-full"
+ >
+ <ProductCategoryPicker
+ v-model:selected-ids="
+ selectedCategoryIds
+ "
+ v-model:primary-id="
+ primaryCategoryId
+ "
+ :categories="
+ categories
+ "
+ :error="
+ fieldErrors
+ .category_ids
+ || fieldErrors[
+ 'category_ids.0'
+ ]
+ || fieldErrors
+ .primary_category_id
+ "
+ />
+ </div>
+
+ <!-- DETAILS -->
+ <div
+ v-else-if="
  activeSection
  === 'details'
  "
@@ -1284,6 +1356,7 @@ async function previewStorefront() {
  required
  />
 
+ <div>
  <AppInput
  v-model="form.slug"
  label="Slug"
@@ -1303,14 +1376,11 @@ async function previewStorefront() {
  </template>
  </AppInput>
 
- <p class="mt-1 text-[11px] text-gray-400 dark:text-gray-600">
- {{
- mode === 'create'
- ? "Fills in from the name automatically until you edit it yourself."
- : ''
- }}
- The greyed-out part at the end always matches the SKU field below — edit that instead of this.
+ <p class="mt-1.5 text-[11px] leading-5 text-gray-500 dark:text-gray-400">
+ {{ mode === 'create' ? 'The slug fills from the product name. ' : '' }}
+ The suffix follows the SKU below.
  </p>
+ </div>
 
  <div>
  <AppInput
@@ -1329,43 +1399,28 @@ async function previewStorefront() {
  </template>
  </AppInput>
 
- <div class="mt-2 flex items-center justify-between gap-3">
+ <div class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+ <AppGeneratorButton
+ icon="refresh"
+ :loading="skuPreviewLoading"
+ :disabled="!primaryCategoryId && !selectedCategoryIds.length"
+ @click="suggestSku"
+ >
+ {{ skuPreviewLoading ? 'Suggesting…' : 'Suggest again' }}
+ </AppGeneratorButton>
+
  <p
- class="text-[11px] text-gray-400 dark:text-gray-600"
+ class="min-w-0 flex-1 basis-48 break-words text-[11px] leading-5 text-gray-500 dark:text-gray-400"
  :title="skuPreviewTitle"
  >
  {{
  skuPreviewChain.length
  ? `Built from: ${skuPreviewChain.join(' → ')}`
- : "Suggested from the category you pick — feel free to correct it."
+ : primaryCategoryId || selectedCategoryIds.length
+ ? 'Suggested from your primary category. You can also enter your own SKU.'
+ : 'Select a category first to suggest an SKU.'
  }}
  </p>
-
- <AppButton
- type="button"
- variant="primary"
- size="sm"
- class="shrink-0"
- :disabled="skuPreviewLoading || (!primaryCategoryId && !selectedCategoryIds.length)"
- @click="suggestSku"
- >
- <svg
- class="h-3.5 w-3.5"
- viewBox="0 0 20 20"
- fill="none"
- stroke="currentColor"
- stroke-width="1.6"
- stroke-linecap="round"
- stroke-linejoin="round"
- >
- <path d="M16.5 8.5a6.5 6.5 0 1 0-1.6 5.9M16.5 3.5v5h-5" />
- </svg>
- {{
- skuPreviewLoading
- ? 'Suggesting…'
- : 'Suggest again'
- }}
- </AppButton>
  </div>
  </div>
 
@@ -1491,36 +1546,6 @@ async function previewStorefront() {
  variant for this product.
  </div>
  </div>
- </div>
-
- <!-- CATEGORIES -->
- <div
- v-else-if="
- activeSection
- === 'categories'
- "
- class="w-full"
- >
- <ProductCategoryPicker
- v-model:selected-ids="
- selectedCategoryIds
- "
- v-model:primary-id="
- primaryCategoryId
- "
- :categories="
- categories
- "
- :error="
- fieldErrors
- .category_ids
- || fieldErrors[
- 'category_ids.0'
- ]
- || fieldErrors
- .primary_category_id
- "
- />
  </div>
 
  <!-- CONTENT -->
@@ -1947,61 +1972,59 @@ async function previewStorefront() {
  </form>
 
  <template #footer>
- <div
- class="
- flex
- flex-col-reverse
- gap-2
-
- sm:flex-row
- sm:items-center
- sm:justify-end
- "
- >
- <AppButton
- type="button"
- variant="ghost"
+ <div class="product-footer space-y-2">
+ <p id="product-save-hint" class="min-h-4 text-[11px] leading-4 text-gray-500 dark:text-gray-400" aria-live="polite">
+ {{ saveHint }}
+ </p>
+ <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+ <div class="flex items-center justify-between gap-2">
+ <AppTabNavigation
+ :model-value="activeSection"
+ :items="sectionTabs"
  :disabled="saving || previewing"
- @click="emit('close')"
- >
+ :next-disabled="!canAdvanceSection"
+ @update:model-value="setActiveSection"
+ />
+ <AppButton type="button" variant="ghost" size="sm" :disabled="saving || previewing" @click="emit('close')">
  Done
  </AppButton>
+ </div>
 
+ <div class="grid grid-cols-2 gap-2 sm:flex sm:items-center sm:justify-end">
  <AppButton
  v-if="mode === 'edit' && product"
  type="button"
  variant="secondary"
+ class="save-action col-span-2 sm:col-auto"
  :loading="previewing"
- :disabled="saving"
+ :disabled="saving || !canSubmitProduct || skuPreviewLoading"
  @click="previewStorefront"
  >
  Preview storefront
  </AppButton>
-
  <AppButton
  type="button"
  variant="secondary"
+ class="save-action"
  :loading="saving"
+ :disabled="!canSubmitProduct || previewing || skuPreviewLoading"
+ aria-describedby="product-save-hint"
  @click="submit(false)"
  >
- {{
- mode === 'create'
- ? 'Create & continue'
- : 'Save'
- }}
+ {{ mode === 'create' ? 'Create & continue' : 'Save' }}
  </AppButton>
-
  <AppButton
  type="button"
+ class="save-action"
  :loading="saving"
+ :disabled="!canSubmitProduct || previewing || skuPreviewLoading"
+ aria-describedby="product-save-hint"
  @click="submit(true)"
  >
- {{
- mode === 'create'
- ? 'Create product'
- : 'Save & close'
- }}
+ {{ mode === 'create' ? 'Create product' : 'Save & close' }}
  </AppButton>
+ </div>
+ </div>
  </div>
  </template>
  </AppModal>
@@ -2023,3 +2046,12 @@ async function previewStorefront() {
  "
  />
 </template>
+
+<style scoped>
+.product-footer :deep(button) {
+ font-size: 12px;
+}
+.product-footer :deep(.save-action) {
+ padding-inline: 10px;
+}
+</style>

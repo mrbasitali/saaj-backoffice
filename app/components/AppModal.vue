@@ -7,12 +7,16 @@ const props = withDefaults(defineProps<{
  fullScreen?: boolean
  hideHeader?: boolean
  zIndex?: number
+ fixedHeight?: boolean
+ scrollKey?: string | number
 }>(), {
  description: undefined,
  maxWidth: 'max-w-3xl',
  fullScreen: false,
  hideHeader: false,
  zIndex: 100,
+ fixedHeight: false,
+ scrollKey: undefined,
 })
 
 const emit = defineEmits<{
@@ -20,6 +24,12 @@ const emit = defineEmits<{
 }>()
 
 const slots = useSlots()
+const scrollContainer = ref<HTMLElement | null>(null)
+
+watch(() => props.scrollKey, async () => {
+ await nextTick()
+ if (scrollContainer.value) scrollContainer.value.scrollTop = 0
+})
 
 const bodyLocked = ref(false)
 
@@ -220,9 +230,10 @@ onBeforeUnmount(() => {
  dark:shadow-[0_30px_90px_rgba(0,0,0,0.5)]
 
  "
- :class="fullScreen
+ :class="[fullScreen
  ? 'h-full max-h-full max-w-[1600px] rounded-[18px] sm:rounded-[22px]'
- : `${maxWidth} max-h-[100dvh] rounded-t-[20px] sm:max-h-[calc(100dvh-24px)] sm:rounded-[20px]`"
+ : `${maxWidth} max-h-[100dvh] rounded-t-[20px] sm:max-h-[calc(100dvh-24px)] sm:rounded-[20px]`,
+ { 'tabbed-modal': fixedHeight && !fullScreen }]"
  @click.stop
  >
  <!-- Header -->
@@ -332,6 +343,7 @@ onBeforeUnmount(() => {
  scrolling area of AppModal.
  -->
  <div
+ ref="scrollContainer"
  class="
  min-h-0
  flex-1
@@ -375,6 +387,16 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.tabbed-modal {
+ height: 100dvh;
+}
+
+@media (min-width: 640px) {
+ .tabbed-modal {
+  height: min(780px, calc(100dvh - 24px));
+ }
+}
+
 .full-screen-shell {
  padding:
  max(0.5rem, env(safe-area-inset-top))

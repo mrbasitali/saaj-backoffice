@@ -775,6 +775,8 @@ onBeforeUnmount(() => {
  :title="title"
  :description="description"
  max-width="max-w-[1060px]"
+ fixed-height
+ :scroll-key="activeSection"
  @close="emit('close')"
  >
  <form
@@ -1931,34 +1933,19 @@ onBeforeUnmount(() => {
  </form>
 
  <template #footer>
- <div
- class="
- flex
- items-center
- justify-end
- gap-2
- "
- >
- <AppButton
- type="button"
- variant="ghost"
+ <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+ <AppTabNavigation
+ :model-value="activeSection"
+ :items="sectionTabs"
  :disabled="saving"
- @click="emit('close')"
- >
- Cancel
+ @update:model-value="setActiveSection"
+ />
+ <div class="flex items-center justify-end gap-2">
+ <AppButton type="button" variant="ghost" :disabled="saving" @click="emit('close')">Cancel</AppButton>
+ <AppButton type="submit" form="category-editor-form" :loading="saving">
+ {{ mode === 'create' ? 'Create category' : 'Save changes' }}
  </AppButton>
-
- <AppButton
- type="submit"
- form="category-editor-form"
- :loading="saving"
- >
- {{
- mode === 'create'
- ? 'Create category'
- : 'Save changes'
- }}
- </AppButton>
+ </div>
  </div>
  </template>
 
