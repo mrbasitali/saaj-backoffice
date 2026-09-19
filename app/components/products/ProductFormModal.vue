@@ -174,115 +174,6 @@ const selectedCategoryIds =
 const primaryCategoryId =
  ref<number | null>(null)
 
-const skuPreview = ref('')
-const skuPreviewChain = ref<string[]>([])
-const skuPreviewLoading = ref(false)
-let skuPreviewToken = 0
-
-function stripHyphens(value: string) {
- return value.toLowerCase().replace(/-/g, '')
-}
-
-const skuPreviewSuffix = computed(() => {
- return skuPreview.value
- ? `-${stripHyphens(skuPreview.value)}`
- : ''
-})
-
-const skuPreviewTitle = computed(() => {
- return skuPreviewChain.value.length
- ? `Built from: ${skuPreviewChain.value.join(' → ')}`
- : 'Appended automatically. Not editable.'
-})
-
-// In edit mode there's nothing to "preview" — the suffix is whatever the
-// product's default variant SKU already is, shown so the admin can see
-// exactly what's at the end of the live slug without it being editable
-// here.
-const skuSuffixDisplay = computed(() => {
- if (props.mode === 'edit') {
- const sku =
- props.product?.default_variant?.sku
-
- return sku
- ? `-${stripHyphens(sku)}`
- : ''
- }
-
- return skuPreviewSuffix.value
-})
-
-const slugTouched = ref(false)
-let settingSlugFromName = false
-
-function slugify(value: string) {
- return value
- .toLowerCase()
- .trim()
- .replace(/[^a-z0-9]+/g, '-')
- .replace(/^-+|-+$/g, '')
-}
-
-async function refreshSkuPreview() {
- if (props.mode !== 'create') {
- skuPreview.value = ''
- skuPreviewChain.value = []
- return
- }
-
- const categoryId =
- primaryCategoryId.value ??
- selectedCategoryIds.value[0] ??
- null
-
- if (!categoryId) {
- skuPreview.value = ''
- skuPreviewChain.value = []
- return
- }
-
- const token = ++skuPreviewToken
- skuPreviewLoading.value = true
-
- try {
- const response = await $api<{
- data: { sku: string | null, chain?: string[] }
- }>(
- `/admin/categories/${categoryId}/next-sku`,
- )
-
- if (token === skuPreviewToken) {
- skuPreview.value =
- response.data.sku ?? ''
- skuPreviewChain.value =
- response.data.chain ?? []
- }
- } catch {
- if (token === skuPreviewToken) {
- skuPreview.value = ''
- skuPreviewChain.value = []
- }
- } finally {
- if (token === skuPreviewToken) {
- skuPreviewLoading.value = false
- }
- }
-}
-
-watch(
- () =>
- [
- primaryCategoryId.value,
- selectedCategoryIds.value.join(','),
- props.open,
- ] as const,
- () => {
- if (props.open) {
- refreshSkuPreview()
- }
- },
-)
-
 const newImages =
  ref<ProductImageDraft[]>([])
 
@@ -290,6 +181,7 @@ const form = reactive({
  brand_id: '',
  name: '',
  slug: '',
+ sku: '',
  short_description: '',
  description: '',
  care_instructions: '',
@@ -304,6 +196,128 @@ const form = reactive({
  sort_order: 0,
  published_at: '',
 })
+
+const skuPreviewChain = ref<string[]>([])
+const skuPreviewLoading = ref(false)
+let skuPreviewToken = 0
+
+function stripHyphens(value: string) {
+ return value.toLowerCase().replace(/-/g, '')
+}
+
+const skuPreviewTitle = computed(() => {
+ return skuPreviewChain.value.length
+ ? `Built from: ${skuPreviewChain.value.join(' → ')}`
+ : 'Suggested from the category you pick — edit it yourself any time.'
+})
+
+// What ends up at the end of the slug always mirrors whatever's actually
+// in the SKU field right now — suggested or hand-typed, doesn't matter.
+const skuSuffixDisplay = computed(() => {
+ return form.sku
+ ? `-${stripHyphens(form.sku)}`
+ : ''
+})
+
+const slugTouched = ref(false)
+let settingSlugFromName = false
+
+const skuTouched = ref(false)
+let settingSkuFromSuggestion = false
+
+function slugify(value: string) {
+ return value
+ .toLowerCase()
+ .trim()
+ .replace(/[^a-z0-9]+/g, '-')
+ .replace(/^-+|-+$/g, '')
+}
+
+/**
+ * Fetches the current suggestion for the selected category. `force`
+ * (used by the "Suggest" button) always overwrites the field; otherwise
+ * it only fills the field while the admin hasn't typed into it
+ * themselves, e.g. while first picking a category for a new product.
+ */
+async function refreshSkuPreview(force = false) {
+ const categoryId =
+ primaryCategoryId.value ??
+ selectedCategoryIds.value[0] ??
+ null
+
+ if (!categoryId) {
+ skuPreviewChain.value = []
+ return
+ }
+
+ const token = ++skuPreviewToken
+ skuPreviewLoading.value = true
+
+ try {
+ const response = await $api<{
+ data: { sku: string | null, chain?: string[] }
+ }>(
+ `/admin/categories/${categoryId}/next-sku`,
+ )
+
+ if (token !== skuPreviewToken) {
+ return
+ }
+
+ skuPreviewChain.value =
+ response.data.chain ?? []
+
+ if (
+ response.data.sku &&
+ (force || !skuTouched.value)
+ ) {
+ settingSkuFromSuggestion = true
+ form.sku = response.data.sku
+ skuTouched.value = false
+ nextTick(() => {
+ settingSkuFromSuggestion = false
+ })
+ }
+ } catch {
+ if (token === skuPreviewToken) {
+ skuPreviewChain.value = []
+ }
+ } finally {
+ if (token === skuPreviewToken) {
+ skuPreviewLoading.value = false
+ }
+ }
+}
+
+function suggestSku() {
+ refreshSkuPreview(true)
+}
+
+// While creating, keeps the SKU field filled with the current suggestion
+// as the admin picks a category — right up until they type into the SKU
+// field themselves, at which point their edit wins from then on.
+watch(
+ () =>
+ [
+ primaryCategoryId.value,
+ selectedCategoryIds.value.join(','),
+ props.open,
+ ] as const,
+ () => {
+ if (props.open && props.mode === 'create') {
+ refreshSkuPreview()
+ }
+ },
+)
+
+watch(
+ () => form.sku,
+ () => {
+ if (!settingSkuFromSuggestion) {
+ skuTouched.value = true
+ }
+ },
+)
 
 // Keeps the slug's editable base in sync with the name while the admin is
 // creating a product — right up until they type into the slug field
@@ -534,6 +548,14 @@ function resetForm() {
 
  slugTouched.value =
  props.mode === 'edit'
+
+ form.sku =
+ props.product?.default_variant
+ ?.sku ?? ''
+
+ skuTouched.value =
+ props.mode === 'edit'
+ skuPreviewChain.value = []
 
  form.short_description =
  props.product
@@ -774,6 +796,10 @@ function productPayload() {
 
  slug:
  form.slug
+ || undefined,
+
+ sku:
+ form.sku
  || undefined,
 
  short_description:
@@ -1223,27 +1249,63 @@ async function previewStorefront() {
  >
  <template #suffix>
  <span
- v-if="mode === 'create' && skuPreviewLoading"
- class="text-[12px] italic"
- >
- …
- </span>
- <span
- v-else-if="skuSuffixDisplay"
+ v-if="skuSuffixDisplay"
  class="whitespace-nowrap font-mono text-[12px]"
- :title="skuPreviewTitle"
+ title="Mirrors the SKU field below. Not editable here."
  >
  {{ skuSuffixDisplay }}
  </span>
  </template>
  </AppInput>
 
- <p
- v-if="mode === 'create'"
- class="mt-1 text-[11px] text-gray-400 dark:text-gray-600"
- >
- Fills in from the name automatically until you edit it yourself. The greyed-out part at the end is added on save and can't be typed — it comes from the category you pick below.
+ <p class="mt-1 text-[11px] text-gray-400 dark:text-gray-600">
+ {{
+ mode === 'create'
+ ? "Fills in from the name automatically until you edit it yourself."
+ : ''
+ }}
+ The greyed-out part at the end always matches the SKU field below — edit that instead of this.
  </p>
+
+ <div>
+ <AppInput
+ v-model="form.sku"
+ label="SKU"
+ placeholder="Pick a category to get a suggestion"
+ :error="fieldErrors.sku"
+ >
+ <template #suffix>
+ <span
+ v-if="skuPreviewLoading"
+ class="text-[12px] italic"
+ >
+ …
+ </span>
+ </template>
+ </AppInput>
+
+ <div class="mt-1 flex items-center justify-between gap-3">
+ <p
+ class="text-[11px] text-gray-400 dark:text-gray-600"
+ :title="skuPreviewTitle"
+ >
+ {{
+ skuPreviewChain.length
+ ? `Built from: ${skuPreviewChain.join(' → ')}`
+ : "Suggested from the category you pick — feel free to correct it."
+ }}
+ </p>
+
+ <button
+ type="button"
+ class="shrink-0 text-[11px] font-medium text-gray-400 transition hover:text-gray-700 disabled:cursor-not-allowed disabled:opacity-60 dark:text-gray-600 dark:hover:text-gray-300"
+ :disabled="skuPreviewLoading || (!primaryCategoryId && !selectedCategoryIds.length)"
+ @click="suggestSku"
+ >
+ Suggest again
+ </button>
+ </div>
+ </div>
 
  <AppSelect
  v-model="form.brand_id"
