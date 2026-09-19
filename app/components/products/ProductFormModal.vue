@@ -77,6 +77,7 @@ type Product = {
  published_at: string | null
  brand?: Brand | null
  categories?: Category[]
+ primary_category_id?: number | null
  primary_image?:
  ProductImage | null
  images?: ProductImage[]
@@ -234,12 +235,13 @@ function slugify(value: string) {
 }
 
 /**
- * Fetches the current suggestion for the selected category. `force`
- * (used by the "Suggest" button) always overwrites the field; otherwise
- * it only fills the field while the admin hasn't typed into it
- * themselves, e.g. while first picking a category for a new product.
+ * Fetches the current suggestion for the selected category while the
+ * admin hasn't typed into the SKU field themselves yet — used passively
+ * as they pick a category while creating a product. Doesn't reserve
+ * anything (cheap to call repeatedly); see suggestSku() below for the
+ * explicit, reserving version behind the "Suggest again" button.
  */
-async function refreshSkuPreview(force = false) {
+async function refreshSkuPreview() {
  const categoryId =
  primaryCategoryId.value ??
  selectedCategoryIds.value[0] ??
@@ -269,7 +271,7 @@ async function refreshSkuPreview(force = false) {
 
  if (
  response.data.sku &&
- (force || !skuTouched.value)
+ !skuTouched.value
  ) {
  settingSkuFromSuggestion = true
  form.sku = response.data.sku
@@ -289,8 +291,49 @@ async function refreshSkuPreview(force = false) {
  }
 }
 
-function suggestSku() {
- refreshSkuPreview(true)
+/**
+ * The explicit "Suggest again" click — unlike the passive auto-fill
+ * above, this always mints a genuinely fresh number (it hits the same
+ * committing endpoint the "Generate" button on a variant uses), so
+ * clicking it repeatedly gives WN-LW26-004, then 005, then 006, rather
+ * than showing the same not-yet-reserved number every time.
+ */
+async function suggestSku() {
+ const categoryId =
+ primaryCategoryId.value ??
+ selectedCategoryIds.value[0] ??
+ null
+
+ if (!categoryId) {
+ return
+ }
+
+ skuPreviewLoading.value = true
+
+ try {
+ const response = await $api<{
+ data: { sku: string | null, chain?: string[] }
+ }>(
+ `/admin/categories/${categoryId}/next-sku`,
+ { method: 'POST' },
+ )
+
+ skuPreviewChain.value =
+ response.data.chain ?? []
+
+ if (response.data.sku) {
+ settingSkuFromSuggestion = true
+ form.sku = response.data.sku
+ skuTouched.value = false
+ nextTick(() => {
+ settingSkuFromSuggestion = false
+ })
+ }
+ } catch {
+ // Leave whatever's already in the field alone.
+ } finally {
+ skuPreviewLoading.value = false
+ }
 }
 
 // While creating, keeps the SKU field filled with the current suggestion
@@ -640,7 +683,9 @@ function resetForm() {
  ?? []
 
  primaryCategoryId.value =
- selectedCategoryIds
+ props.product
+ ?.primary_category_id
+ ?? selectedCategoryIds
  .value[0]
  ?? null
 }
@@ -1284,7 +1329,7 @@ async function previewStorefront() {
  </template>
  </AppInput>
 
- <div class="mt-1 flex items-center justify-between gap-3">
+ <div class="mt-2 flex items-center justify-between gap-3">
  <p
  class="text-[11px] text-gray-400 dark:text-gray-600"
  :title="skuPreviewTitle"
@@ -1296,14 +1341,31 @@ async function previewStorefront() {
  }}
  </p>
 
- <button
+ <AppButton
  type="button"
- class="shrink-0 text-[11px] font-medium text-gray-400 transition hover:text-gray-700 disabled:cursor-not-allowed disabled:opacity-60 dark:text-gray-600 dark:hover:text-gray-300"
+ variant="primary"
+ size="sm"
+ class="shrink-0"
  :disabled="skuPreviewLoading || (!primaryCategoryId && !selectedCategoryIds.length)"
  @click="suggestSku"
  >
- Suggest again
- </button>
+ <svg
+ class="h-3.5 w-3.5"
+ viewBox="0 0 20 20"
+ fill="none"
+ stroke="currentColor"
+ stroke-width="1.6"
+ stroke-linecap="round"
+ stroke-linejoin="round"
+ >
+ <path d="M16.5 8.5a6.5 6.5 0 1 0-1.6 5.9M16.5 3.5v5h-5" />
+ </svg>
+ {{
+ skuPreviewLoading
+ ? 'Suggesting…'
+ : 'Suggest again'
+ }}
+ </AppButton>
  </div>
  </div>
 
