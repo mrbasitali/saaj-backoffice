@@ -37,6 +37,12 @@ type Settings = {
   social_whatsapp_url: string | null
   social_twitter_enabled: boolean
   social_twitter_url: string | null
+  seo_default_meta_title: string | null
+  seo_default_meta_description: string | null
+  seo_default_og_image_url: string | null
+  seo_google_site_verification: string | null
+  seo_head_snippet: string | null
+  seo_footer_snippet: string | null
 }
 
 const { $api } = useNuxtApp()
@@ -77,6 +83,12 @@ const form = reactive<Settings>({
   social_whatsapp_url: null,
   social_twitter_enabled: false,
   social_twitter_url: null,
+  seo_default_meta_title: null,
+  seo_default_meta_description: null,
+  seo_default_og_image_url: null,
+  seo_google_site_verification: null,
+  seo_head_snippet: null,
+  seo_footer_snippet: null,
 })
 
 watchEffect(() => {
@@ -93,6 +105,7 @@ const WEBSITE_LOGO_SLOTS = [
 const ALL_LOGO_KEYS = [
   ...WEBSITE_LOGO_SLOTS.map(slot => slot.key),
   'invoice_logo',
+  'seo_default_og_image',
 ] as const
 
 const logoFiles = reactive<Record<string, File | null>>({})
@@ -189,6 +202,19 @@ function removeAdminNotificationEmail(index: number) {
   form.admin_order_notification_emails.splice(index, 1)
 }
 
+// A quick, non-blocking sanity check on what was pasted into the head
+// snippet — this never stops saving, it's just a heads-up so an SEO
+// person notices a copy-paste mistake before it goes live.
+const headSnippetWarning = computed(() => {
+  const value = form.seo_head_snippet
+  if (!value) return null
+
+  if (/<html[\s>]|<body[\s>]|<head[\s>]/i.test(value)) {
+    return 'This looks like it includes a full <html>/<head>/<body> tag — paste only the snippet the tool gave you (usually one or more <script> or <meta> tags), not the whole page.'
+  }
+
+  return null
+})
 
 function buildFormData() {
   const body = new FormData()
@@ -217,6 +243,11 @@ function buildFormData() {
     'bank_details',
     'currency',
     'timezone',
+    'seo_default_meta_title',
+    'seo_default_meta_description',
+    'seo_google_site_verification',
+    'seo_head_snippet',
+    'seo_footer_snippet',
   ]
 
   for (const field of textFields) {
@@ -732,6 +763,155 @@ const socialConfig = [
               class="min-w-0 flex-1 rounded-[10px] bg-gray-950/[0.04] px-3.5 py-2.5 text-[13px] text-gray-950 outline-none transition hover:bg-gray-950/[0.055] focus:bg-gray-950/[0.055] focus:ring-2 focus:ring-gray-950/10 disabled:opacity-50 dark:bg-white/[0.06] dark:text-white dark:hover:bg-white/[0.075] dark:focus:bg-white/[0.08] dark:focus:ring-white/10"
             >
           </div>
+        </div>
+      </AppCard>
+
+      <!-- SEO defaults -->
+      <AppCard class="p-5 sm:p-6">
+        <div>
+          <p class="text-sm font-semibold text-gray-950 dark:text-white">
+            Default SEO
+          </p>
+          <p class="mt-1 max-w-2xl text-[13px] leading-5 text-gray-400 dark:text-gray-500">
+            Fallback title, description, and share image used by any page that doesn't already set its own — product and category pages already manage their own SEO fields and are not affected by this.
+          </p>
+        </div>
+
+        <div class="mt-5 grid gap-5 sm:grid-cols-2">
+          <AppInput
+            v-model="form.seo_default_meta_title"
+            label="Default meta title"
+            placeholder="SAAJ — Modern Clothing"
+          />
+          <AppInput
+            v-model="form.seo_google_site_verification"
+            label="Google Search Console verification code"
+            placeholder="e.g. AbCdEf12345… (the content= value only, not the whole tag)"
+          />
+        </div>
+
+        <div class="mt-5">
+          <AppTextarea
+            v-model="form.seo_default_meta_description"
+            label="Default meta description"
+            placeholder="Discover the latest SAAJ edit — considered clothing, modern silhouettes, and thoughtful detail."
+            :rows="2"
+          />
+        </div>
+
+        <div class="mt-5">
+          <p class="mb-2 text-[13px] font-medium text-gray-700 dark:text-gray-300">
+            Default share image (Open Graph)
+          </p>
+          <p class="mb-3 text-[12px] leading-5 text-gray-400 dark:text-gray-500">
+            Shown when the website is shared on WhatsApp, Facebook, X, or LinkedIn, for any page without its own image. Recommended: 1200×630px.
+          </p>
+
+          <div class="flex items-center gap-4">
+            <div class="flex h-20 w-32 shrink-0 items-center justify-center overflow-hidden rounded-[12px] border border-dashed border-gray-300 bg-gray-950/[0.02] dark:border-white/15 dark:bg-white/[0.02]">
+              <img
+                v-if="currentLogoSrc('seo_default_og_image')"
+                :src="currentLogoSrc('seo_default_og_image')!"
+                alt="Default share image"
+                class="h-full w-full object-cover"
+              >
+              <span v-else class="text-xs text-gray-400">No image set</span>
+            </div>
+
+            <div class="flex items-center gap-3">
+              <label class="cursor-pointer text-[13px] font-medium text-gray-700 underline decoration-gray-300 underline-offset-4 dark:text-gray-300">
+                Upload
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  class="hidden"
+                  @change="onLogoChange('seo_default_og_image', $event)"
+                >
+              </label>
+
+              <button
+                v-if="currentLogoSrc('seo_default_og_image')"
+                type="button"
+                class="text-[13px] text-red-600 hover:underline dark:text-red-400"
+                @click="clearLogo('seo_default_og_image')"
+              >
+                Remove
+              </button>
+            </div>
+          </div>
+        </div>
+      </AppCard>
+
+      <!-- Raw head / footer code injection -->
+      <AppCard class="p-5 sm:p-6">
+        <div>
+          <p class="text-sm font-semibold text-gray-950 dark:text-white">
+            SEO & tracking scripts
+          </p>
+          <p class="mt-1 max-w-2xl text-[13px] leading-5 text-gray-400 dark:text-gray-500">
+            Paste code exactly as given by Google, Meta, TikTok, or any other tool. It's added to every page of the live website automatically — no developer needed for future changes.
+          </p>
+        </div>
+
+        <div class="mt-5 rounded-[12px] bg-amber-500/[0.07] px-4 py-3.5 text-[12px] leading-5 text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">
+          Only paste code from a source you trust. This runs on every visitor's browser on the live storefront, so a mistake here (or malicious code) affects the whole website immediately after saving.
+        </div>
+
+        <div class="mt-5">
+          <div class="mb-2 flex items-center justify-between">
+            <p class="text-[13px] font-medium text-gray-700 dark:text-gray-300">
+              Header code
+            </p>
+            <span class="text-[11px] text-gray-400 dark:text-gray-500">Rendered just before &lt;/head&gt;</span>
+          </div>
+          <p class="mb-2 text-[12px] leading-5 text-gray-400 dark:text-gray-500">
+            Use this for things like Google Tag Manager's head script, Google Analytics (GA4), Meta Pixel, extra verification &lt;meta&gt; tags, or custom &lt;link&gt;/&lt;style&gt; tags. Include the full tag(s), e.g. <code class="rounded bg-gray-950/[0.06] px-1 py-0.5 dark:bg-white/[0.08]">&lt;script&gt;...&lt;/script&gt;</code>.
+          </p>
+          <textarea
+            v-model="form.seo_head_snippet"
+            rows="8"
+            spellcheck="false"
+            placeholder="<!-- e.g. Google Tag Manager, GA4, Meta Pixel, verification meta tags -->"
+            class="block w-full resize-y rounded-[10px] bg-gray-950/[0.04] px-3 py-2.5 font-mono text-[12.5px] leading-5 text-gray-950 outline-none transition duration-150 placeholder:text-gray-400 hover:bg-gray-950/[0.055] focus:bg-gray-950/[0.055] focus:ring-2 focus:ring-gray-950/10 dark:bg-white/[0.06] dark:text-white dark:placeholder:text-gray-600 dark:hover:bg-white/[0.075] dark:focus:bg-white/[0.08] dark:focus:ring-white/10"
+          />
+          <p v-if="headSnippetWarning" class="mt-2 text-[12px] font-medium text-amber-700 dark:text-amber-400">
+            {{ headSnippetWarning }}
+          </p>
+        </div>
+
+        <div class="mt-6">
+          <div class="mb-2 flex items-center justify-between">
+            <p class="text-[13px] font-medium text-gray-700 dark:text-gray-300">
+              Footer code
+            </p>
+            <span class="text-[11px] text-gray-400 dark:text-gray-500">Rendered just before &lt;/body&gt;</span>
+          </div>
+          <p class="mb-2 text-[12px] leading-5 text-gray-400 dark:text-gray-500">
+            Use this for scripts meant to load near the end of the page, e.g. a chat widget, the Google Tag Manager &lt;noscript&gt; fallback, or any script that should not block initial page rendering.
+          </p>
+          <textarea
+            v-model="form.seo_footer_snippet"
+            rows="6"
+            spellcheck="false"
+            placeholder="<!-- e.g. chat widget, GTM <noscript> fallback -->"
+            class="block w-full resize-y rounded-[10px] bg-gray-950/[0.04] px-3 py-2.5 font-mono text-[12.5px] leading-5 text-gray-950 outline-none transition duration-150 placeholder:text-gray-400 hover:bg-gray-950/[0.055] focus:bg-gray-950/[0.055] focus:ring-2 focus:ring-gray-950/10 dark:bg-white/[0.06] dark:text-white dark:placeholder:text-gray-600 dark:hover:bg-white/[0.075] dark:focus:bg-white/[0.08] dark:focus:ring-white/10"
+          />
+        </div>
+
+        <div class="mt-6 rounded-[12px] bg-gray-950/[0.025] p-4 dark:bg-white/[0.035]">
+          <p class="text-[13px] font-semibold text-gray-800 dark:text-gray-200">
+            How to check it's actually working
+          </p>
+          <ol class="mt-2 list-decimal space-y-1.5 pl-5 text-[12px] leading-5 text-gray-500 dark:text-gray-400">
+            <li>Save here, then open the live storefront in a normal (not private/incognito) browser tab.</li>
+            <li>Right-click the page → <span class="font-medium text-gray-700 dark:text-gray-300">View Page Source</span> (not just "Inspect") and search (Ctrl/Cmd+F) for a unique piece of the code you pasted — e.g. your GTM container ID (GTM-XXXXXXX) or verification code. If it's there, the header/footer code saved and rendered correctly.</li>
+            <li>For Google Tag Manager or GA4: open the site, then use the <span class="font-medium text-gray-700 dark:text-gray-300">Tag Assistant</span> browser extension or GTM's built-in Preview mode — it will show the container firing live on the page.</li>
+            <li>For the Google Search Console verification code above: add it here, save, then click "Verify" in Search Console using the "HTML tag" method.</li>
+            <li>For any script: open browser DevTools → <span class="font-medium text-gray-700 dark:text-gray-300">Network</span> tab, reload the page, and confirm the script's own file (e.g. gtm.js, fbevents.js) actually loads with a 200 status.</li>
+          </ol>
+          <p class="mt-3 text-[11px] leading-5 text-gray-400 dark:text-gray-500">
+            Changes apply immediately on save — there's no separate deploy step, and no caching delay to wait out.
+          </p>
         </div>
       </AppCard>
 
