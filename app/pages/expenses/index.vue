@@ -254,6 +254,13 @@ function payeeLabel(expense: Expense) {
   return expense.vendor?.name || expense.payee || '—'
 }
 
+function openReceipt(url: string | null) {
+  if (!import.meta.client || !url) return
+
+  // Browser globals belong in script handlers, not the Vue template context.
+  window.open(url, '_blank', 'noopener,noreferrer')
+}
+
 function showNotice(message: string) {
   notice.value = message
 
@@ -611,7 +618,7 @@ function nextPage() {
 
                       <AppActionMenuItem
                         v-if="expense.receipt_url"
-                        @click="() => { window.open(expense.receipt_url as string, '_blank', 'noopener,noreferrer'); close() }"
+                        @click="openReceipt(expense.receipt_url); close()"
                       >
                         View receipt
                       </AppActionMenuItem>

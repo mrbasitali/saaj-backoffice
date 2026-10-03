@@ -61,6 +61,18 @@ const fieldErrors = ref<Record<string, string>>({})
 const receiptInput = ref<HTMLInputElement | null>(null)
 const receiptFile = ref<File | null>(null)
 const removeReceipt = ref(false)
+const receiptError = ref('')
+const receiptObjectUrl = ref('')
+const MAX_RECEIPT_BYTES = 10 * 1024 * 1024
+const RECEIPT_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp'])
+
+function setReceiptFile(file: File | null) {
+  if (receiptObjectUrl.value) URL.revokeObjectURL(receiptObjectUrl.value)
+  receiptObjectUrl.value = file ? URL.createObjectURL(file) : ''
+  receiptFile.value = file
+}
+
+onBeforeUnmount(() => setReceiptFile(null))
 
 const copyingPrevious = ref(false)
 const paidAtInput = ref(toDateTimeInput())
@@ -118,7 +130,7 @@ const paymentMethodOptions = [
 ]
 
 const receiptPreview = computed(() => {
-  if (receiptFile.value) return URL.createObjectURL(receiptFile.value)
+  if (receiptFile.value) return receiptObjectUrl.value
   if (removeReceipt.value) return ''
 
   return props.expense?.receipt_url || ''
@@ -129,7 +141,10 @@ const isLocked = computed(() => props.mode === 'edit' && props.expense?.status !
 watch(
   () => [props.open, props.expense, props.mode] as const,
   () => {
-    if (!props.open) return
+    if (!props.open) {
+      setReceiptFile(null)
+      return
+    }
     resetForm()
   },
   { immediate: true },
@@ -142,7 +157,8 @@ function todayDate() {
 function resetForm() {
   formError.value = ''
   fieldErrors.value = {}
-  receiptFile.value = null
+  setReceiptFile(null)
+  receiptError.value = ''
   removeReceipt.value = false
 
   if (receiptInput.value) receiptInput.value.value = ''
@@ -163,12 +179,38 @@ function resetForm() {
 
 function onReceiptChange(event: Event) {
   const input = event.target as HTMLInputElement
-  receiptFile.value = input.files?.[0] || null
+  const file = input.files?.[0]
+  if (!file) return
+
+  receiptError.value = ''
+  delete fieldErrors.value.receipt_image
+  formError.value = ''
+
+  const supported = RECEIPT_TYPES.has(file.type)
+    || (!file.type && /\.(jpe?g|png|webp)$/i.test(file.name))
+
+  if (!supported) {
+    receiptError.value = 'Choose a JPG, PNG or WebP receipt image.'
+  } else if (file.size === 0) {
+    receiptError.value = 'This image is empty. Choose another file.'
+  } else if (file.size > MAX_RECEIPT_BYTES) {
+    receiptError.value = 'The receipt image must be 10 MB or smaller.'
+  }
+
+  if (receiptError.value) {
+    input.value = ''
+    return
+  }
+
+  setReceiptFile(file)
   removeReceipt.value = false
 }
 
 function clearReceipt() {
-  receiptFile.value = null
+  setReceiptFile(null)
+  receiptError.value = ''
+  delete fieldErrors.value.receipt_image
+  formError.value = ''
   removeReceipt.value = true
 
   if (receiptInput.value) receiptInput.value.value = ''
@@ -235,6 +277,11 @@ function normalizeErrors(error: any) {
 }
 
 function friendlyErrorMessage(error: any) {
+  const status = Number(error?.response?.status ?? error?.statusCode ?? error?.status ?? 0)
+  if (status === 413) {
+    return 'This upload exceeds the server request limit. Choose a smaller receipt image or ask your administrator to increase the upload limit.'
+  }
+
   const message = String(error?.data?.message || '')
   const firstFieldError = Object.values(fieldErrors.value)[0]
 
@@ -278,6 +325,8 @@ function buildFormData() {
 }
 
 async function submit() {
+  if (saving.value || isLocked.value || receiptError.value) return
+
   saving.value = true
   formError.value = ''
   fieldErrors.value = {}
@@ -333,7 +382,7 @@ async function submit() {
       @submit.prevent="submit"
     >
       <fieldset
-        :disabled="isLocked"
+        :disabled="isLocked || saving"
         class="disabled:opacity-60"
       >
         <div class="px-4 py-5 sm:px-5">
@@ -454,12 +503,12 @@ async function submit() {
                   </label>
 
                   <p class="mt-1 text-[12px] leading-5 text-gray-400 dark:text-gray-500">
-                    Photo of the bill/receipt. JPG, PNG or WebP.
+                    Photo of the bill/receipt. JPG, PNG or WebP, up to 10 MB.
                   </p>
                 </div>
 
                 <AppButton
-                  v-if="receiptFile || (props.expense?.receipt_url && !removeReceipt)"
+                  v-if="receiptError || receiptFile || (props.expense?.receipt_url && !removeReceipt)"
                   type="button"
                   variant="ghost"
                   size="sm"
@@ -496,10 +545,11 @@ async function submit() {
                   >
 
                   <p
-                    v-if="fieldErrors.receipt_image"
+                    v-if="receiptError || fieldErrors.receipt_image"
                     class="mt-2 text-sm text-red-600 dark:text-red-400"
+                    role="alert"
                   >
-                    {{ fieldErrors.receipt_image }}
+                    {{ receiptError || fieldErrors.receipt_image }}
                   </p>
 
                   <p
@@ -540,6 +590,7 @@ async function submit() {
           type="submit"
           form="expense-form"
           :loading="saving"
+          :disabled="Boolean(receiptError)"
         >
           {{ saving ? 'Saving...' : mode === 'create' ? 'Record expense' : 'Save changes' }}
         </AppButton>
