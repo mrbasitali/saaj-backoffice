@@ -64,10 +64,12 @@ type Product = {
  name: string
  slug: string
  slug_base?: string | null
+ item_code?: string | null
  short_description: string | null
  description: string | null
  care_instructions: string | null
  card_description?: string | null
+ badges?: string[] | null
  meta_title: string | null
  meta_description: string | null
  is_active: boolean
@@ -182,11 +184,13 @@ const form = reactive({
  brand_id: '',
  name: '',
  slug: '',
+ item_code: '',
  sku: '',
  short_description: '',
  description: '',
  care_instructions: '',
  card_description: '',
+ badges: [] as string[],
  price: '',
  sale_price: '',
  meta_title: '',
@@ -197,6 +201,47 @@ const form = reactive({
  sort_order: 0,
  published_at: '',
 })
+
+const badgeDraft = ref('')
+const badgeLimit = 4
+const badgeSuggestions = [
+ 'Unstitched',
+ 'Ready to Wear',
+ 'Limited',
+ 'Exclusive',
+]
+
+function addBadge(value = badgeDraft.value) {
+ const badge = String(value || '')
+ .trim()
+ .replace(/\s+/g, ' ')
+
+ if (!badge) return
+
+ if (badge.length > 32) {
+ fieldErrors.value.badges = 'Keep each badge to 32 characters or fewer.'
+ return
+ }
+
+ if (form.badges.length >= badgeLimit) {
+ fieldErrors.value.badges = `You can show up to ${badgeLimit} badges on one product.`
+ return
+ }
+
+ if (form.badges.some(item => item.toLowerCase() === badge.toLowerCase())) {
+ badgeDraft.value = ''
+ return
+ }
+
+ form.badges.push(badge)
+ badgeDraft.value = ''
+ delete fieldErrors.value.badges
+}
+
+function removeBadge(index: number) {
+ form.badges.splice(index, 1)
+ delete fieldErrors.value.badges
+}
 
 const skuPreviewChain = ref<string[]>([])
 const skuPreviewLoading = ref(false)
@@ -638,6 +683,10 @@ function resetForm() {
  : props.product?.slug)
  ?? ''
 
+ form.item_code =
+ props.product?.item_code
+ ?? ''
+
  slugTouched.value =
  props.mode === 'edit'
 
@@ -667,6 +716,11 @@ function resetForm() {
  props.product
  ?.card_description
  ?? ''
+
+ form.badges = [
+ ...(props.product?.badges ?? []),
+ ]
+ badgeDraft.value = ''
 
  form.price =
  isSimpleProduct.value
@@ -892,6 +946,10 @@ function productPayload() {
  form.slug
  || undefined,
 
+ item_code:
+ form.item_code.trim()
+ || null,
+
  sku:
  form.sku
  || undefined,
@@ -911,6 +969,8 @@ function productPayload() {
  card_description:
  form.card_description
  || null,
+
+ badges: form.badges,
 
  price:
  form.price === ''
@@ -1433,6 +1493,19 @@ async function previewStorefront() {
  />
 
  <AppInput
+ v-model="form.item_code"
+ label="Item code (admin only)"
+ placeholder="e.g. SAAJ-1048"
+ :error="fieldErrors.item_code"
+ >
+ <template #suffix>
+ <span class="text-[9px] font-semibold uppercase tracking-[0.1em] text-gray-400 dark:text-gray-500">
+ Internal
+ </span>
+ </template>
+ </AppInput>
+
+ <AppInput
  v-model="
  form.sort_order
  "
@@ -1478,6 +1551,91 @@ async function previewStorefront() {
  >
  <template #prefix>Rs</template>
  </AppInput>
+
+ <div class="md:col-span-2">
+ <div class="rounded-[14px] bg-gray-950/[0.025] p-4 dark:bg-white/[0.035]">
+ <div class="flex flex-wrap items-start justify-between gap-3">
+ <div>
+ <p class="text-[12px] font-medium text-gray-700 dark:text-gray-300">
+ Storefront badges
+ </p>
+ <p class="mt-1 max-w-xl text-[11px] leading-5 text-gray-500 dark:text-gray-500">
+ Add short labels customers should notice immediately, such as “Unstitched”. They appear neatly on the product image; item code never appears on the storefront.
+ </p>
+ </div>
+
+ <span class="text-[10px] font-medium text-gray-400 dark:text-gray-600">
+ {{ form.badges.length }}/{{ badgeLimit }}
+ </span>
+ </div>
+
+ <div
+ v-if="form.badges.length"
+ class="mt-3 flex flex-wrap gap-2"
+ >
+ <button
+ v-for="(badge, index) in form.badges"
+ :key="`${badge}-${index}`"
+ type="button"
+ class="group inline-flex items-center gap-1.5 rounded-full bg-gray-950 px-2.5 py-1.5 text-[10px] font-semibold tracking-[0.025em] text-white transition hover:bg-gray-700 dark:bg-white dark:text-gray-950 dark:hover:bg-gray-200"
+ :title="`Remove ${badge}`"
+ @click="removeBadge(index)"
+ >
+ <span>{{ badge }}</span>
+ <svg class="h-3 w-3 opacity-55 transition group-hover:opacity-100" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+ <path d="m4.5 4.5 7 7m0-7-7 7" />
+ </svg>
+ </button>
+ </div>
+
+ <div class="mt-3 flex gap-2">
+ <div class="flex min-h-10 min-w-0 flex-1 items-center rounded-[10px] bg-gray-950/[0.04] px-3 focus-within:ring-2 focus-within:ring-gray-950/10 dark:bg-white/[0.06] dark:focus-within:ring-white/10">
+ <input
+ v-model="badgeDraft"
+ type="text"
+ maxlength="32"
+ :disabled="form.badges.length >= badgeLimit"
+ placeholder="Type a badge, e.g. Unstitched"
+ class="h-10 min-w-0 flex-1 bg-transparent text-[13px] text-gray-950 outline-none placeholder:text-gray-400 disabled:opacity-50 dark:text-white dark:placeholder:text-gray-600"
+ @keydown.enter.prevent="addBadge()"
+ >
+ </div>
+
+ <AppButton
+ variant="secondary"
+ :disabled="!badgeDraft.trim() || form.badges.length >= badgeLimit"
+ @click="addBadge()"
+ >
+ Add
+ </AppButton>
+ </div>
+
+ <p
+ v-if="fieldErrors.badges"
+ class="mt-1.5 text-[12px] font-medium text-red-600 dark:text-red-400"
+ >
+ {{ fieldErrors.badges }}
+ </p>
+
+ <div
+ v-if="form.badges.length < badgeLimit"
+ class="mt-3 flex flex-wrap items-center gap-1.5"
+ >
+ <span class="mr-1 text-[10px] font-medium uppercase tracking-[0.08em] text-gray-400 dark:text-gray-600">
+ Quick add
+ </span>
+ <button
+ v-for="suggestion in badgeSuggestions.filter(item => !form.badges.some(badge => badge.toLowerCase() === item.toLowerCase()))"
+ :key="suggestion"
+ type="button"
+ class="rounded-full bg-gray-950/[0.045] px-2.5 py-1 text-[10px] font-medium text-gray-600 transition hover:bg-gray-950/[0.08] hover:text-gray-950 dark:bg-white/[0.055] dark:text-gray-400 dark:hover:bg-white/[0.09] dark:hover:text-white"
+ @click="addBadge(suggestion)"
+ >
+ + {{ suggestion }}
+ </button>
+ </div>
+ </div>
+ </div>
 
  <div
  v-if="isSimpleProduct"

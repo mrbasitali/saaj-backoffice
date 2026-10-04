@@ -53,10 +53,12 @@ type Product = {
  name: string
  slug: string
  slug_base?: string | null
+ item_code?: string | null
  short_description: string | null
  description: string | null
  care_instructions: string | null
  card_description: string | null
+ badges?: string[] | null
  meta_title: string | null
  meta_description: string | null
  is_active: boolean
@@ -88,8 +90,16 @@ type ProductIndexResponse = {
  meta: PaginationMeta
 }
 
+type ProductPreview = {
+ url: string
+ live_url: string
+ expires_at: string
+ expires_in_minutes: number
+}
+
 type ProductResponse = {
  data: Product
+ preview?: ProductPreview
  message?: string
 }
 
@@ -635,6 +645,68 @@ async function fetchProduct(productId: number) {
  return response.data
 }
 
+async function fetchProductLinks(productId: number) {
+ const response = await $api<ProductResponse>(`/admin/products/${productId}`)
+
+ if (!response.preview?.url || !response.preview?.live_url) {
+ throw new Error('Product URLs are not available.')
+ }
+
+ return response.preview
+}
+
+async function copyText(value: string) {
+ if (!import.meta.client) return
+
+ if (navigator.clipboard?.writeText) {
+ await navigator.clipboard.writeText(value)
+ return
+ }
+
+ const textarea = document.createElement('textarea')
+ textarea.value = value
+ textarea.setAttribute('readonly', '')
+ textarea.style.position = 'fixed'
+ textarea.style.opacity = '0'
+ document.body.appendChild(textarea)
+ textarea.select()
+ document.execCommand('copy')
+ textarea.remove()
+}
+
+async function copyWebsiteUrl(product: Product) {
+ try {
+ const links = await fetchProductLinks(product.id)
+ await copyText(links.live_url)
+ showNotice('Website URL copied.')
+ } catch (error: any) {
+ showNotice(extractApiErrorMessage(error, 'Could not copy the website URL.'))
+ }
+}
+
+async function openProductUrl(product: Product, mode: 'live' | 'preview') {
+ if (!import.meta.client) return
+
+ const target = window.open('about:blank', '_blank')
+
+ if (!target) {
+ showNotice('Your browser blocked the new tab. Allow pop-ups for Backoffice and try again.')
+ return
+ }
+
+ target.opener = null
+ target.document.title = mode === 'preview' ? 'Preparing SAAJ preview…' : 'Opening SAAJ product…'
+ target.document.body.innerHTML = '<div style="font-family:system-ui;padding:32px;color:#111">Preparing product link…</div>'
+
+ try {
+ const links = await fetchProductLinks(product.id)
+ target.location.replace(mode === 'preview' ? links.url : links.live_url)
+ } catch (error: any) {
+ target.close()
+ showNotice(extractApiErrorMessage(error, `Could not open the ${mode} URL.`))
+ }
+}
+
 function openCreate() {
  selectedProduct.value = null
  formMode.value = 'create'
@@ -1033,7 +1105,7 @@ function nextPage() {
  >
  <AppInput
  v-model="search"
- placeholder="Search products, slug, description or SEO title..."
+ placeholder="Search products, item code, slug, description or SEO title..."
  >
  <template #prefix>
  <svg
@@ -2065,6 +2137,13 @@ function nextPage() {
  </p>
 
  <p
+ v-if="product.item_code"
+ class="mt-0.5 truncate text-[10px] font-medium uppercase tracking-[0.055em] text-gray-400 dark:text-gray-600"
+ >
+ Item {{ product.item_code }}
+ </p>
+
+ <p
  v-if="
  product.short_description
  "
@@ -2399,6 +2478,24 @@ function nextPage() {
  </AppActionMenuItem>
 
  <AppActionMenuItem
+ @click="copyWebsiteUrl(product); close()"
+ >
+ Copy website URL
+ </AppActionMenuItem>
+
+ <AppActionMenuItem
+ @click="openProductUrl(product, 'live'); close()"
+ >
+ Open live URL
+ </AppActionMenuItem>
+
+ <AppActionMenuItem
+ @click="openProductUrl(product, 'preview'); close()"
+ >
+ Open preview URL
+ </AppActionMenuItem>
+
+ <AppActionMenuItem
  @click="printProductTags(product); close()"
  >
  {{
@@ -2580,6 +2677,13 @@ function nextPage() {
  >
  {{ product.slug }}
  </p>
+
+ <p
+ v-if="product.item_code"
+ class="mt-0.5 truncate text-[10px] font-medium uppercase tracking-[0.055em] text-gray-400 dark:text-gray-600"
+ >
+ Item {{ product.item_code }}
+ </p>
  </button>
 
  <AppActionMenu>
@@ -2594,6 +2698,24 @@ function nextPage() {
  @click="openVariants(product); close()"
  >
  Manage variants
+ </AppActionMenuItem>
+
+ <AppActionMenuItem
+ @click="copyWebsiteUrl(product); close()"
+ >
+ Copy website URL
+ </AppActionMenuItem>
+
+ <AppActionMenuItem
+ @click="openProductUrl(product, 'live'); close()"
+ >
+ Open live URL
+ </AppActionMenuItem>
+
+ <AppActionMenuItem
+ @click="openProductUrl(product, 'preview'); close()"
+ >
+ Open preview URL
  </AppActionMenuItem>
 
  <AppActionMenuItem
