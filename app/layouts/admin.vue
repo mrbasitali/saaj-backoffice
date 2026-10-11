@@ -135,6 +135,12 @@ const navGroups: NavGroup[] = [
  to: '/settings/site-settings',
  icon: 'sliders',
  },
+ {
+ label: 'SEO Google Sheets',
+ to: '/settings/seo-sheets',
+ icon: 'sliders',
+ roles: ['super_admin', 'admin'],
+ },
  ],
  },
 
