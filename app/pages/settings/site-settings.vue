@@ -21,10 +21,13 @@ type Settings = {
   currency: string | null
   timezone: string
   show_sold_out_products: boolean
+  product_card_badge_visibility: 'always' | 'hover' | 'hidden'
   stacked_product_gallery_enabled: boolean
   editorial_gallery_padding_enabled: boolean
   direct_buy_now_enabled: boolean
   admin_order_notification_emails: string[]
+  admin_order_sms_enabled: boolean
+  admin_order_sms_phones: string[]
   social_facebook_enabled: boolean
   social_facebook_url: string | null
   social_instagram_enabled: boolean
@@ -67,10 +70,13 @@ const form = reactive<Settings>({
   currency: 'PKR',
   timezone: 'Asia/Karachi',
   show_sold_out_products: true,
+  product_card_badge_visibility: 'always',
   stacked_product_gallery_enabled: false,
   editorial_gallery_padding_enabled: true,
   direct_buy_now_enabled: false,
   admin_order_notification_emails: [],
+  admin_order_sms_enabled: false,
+  admin_order_sms_phones: [],
   social_facebook_enabled: false,
   social_facebook_url: null,
   social_instagram_enabled: false,
@@ -94,6 +100,12 @@ const form = reactive<Settings>({
 watchEffect(() => {
   if (data.value?.data) Object.assign(form, data.value.data)
 })
+
+const productCardBadgeOptions = [
+  { value: 'always', label: 'Always show' },
+  { value: 'hover', label: 'On hover or keyboard focus' },
+  { value: 'hidden', label: 'Hide' },
+]
 
 const WEBSITE_LOGO_SLOTS = [
   { key: 'navbar_logo_light', label: 'Navbar logo — light background' },
@@ -144,6 +156,8 @@ const saving = ref(false)
 const formError = ref('')
 const success = ref(false)
 const adminNotificationEmail = ref('')
+const adminNotificationPhone = ref('')
+const adminNotificationPhoneError = ref('')
 const { timezone: activeTimezone } = useAppDateTime()
 
 const timezoneOptions = computed(() => {
@@ -200,6 +214,30 @@ function addAdminNotificationEmail() {
 
 function removeAdminNotificationEmail(index: number) {
   form.admin_order_notification_emails.splice(index, 1)
+}
+
+function addAdminNotificationPhone() {
+  const number = adminNotificationPhone.value.replace(/[\s().-]+/g, '')
+  const local = number.match(/^(?:0|92)?(3[0-9]{9})$/)
+  const phone = local ? `+92${local[1]}` : number
+
+  if (!/^\+[1-9][0-9]{7,14}$/.test(phone)) {
+    adminNotificationPhoneError.value = 'Enter a Pakistani mobile number or include the international country code.'
+    return false
+  }
+
+  if (!form.admin_order_sms_phones.includes(phone)) {
+    if (form.admin_order_sms_phones.length === 10) {
+      adminNotificationPhoneError.value = 'You can add up to 10 SMS recipients.'
+      return false
+    }
+
+    form.admin_order_sms_phones.push(phone)
+  }
+
+  adminNotificationPhone.value = ''
+  adminNotificationPhoneError.value = ''
+  return true
 }
 
 // A quick, non-blocking sanity check on what was pasted into the head
@@ -261,10 +299,13 @@ function buildFormData() {
   }
 
   body.append('show_sold_out_products', form.show_sold_out_products ? '1' : '0')
+  body.append('product_card_badge_visibility', form.product_card_badge_visibility)
   body.append('stacked_product_gallery_enabled', form.stacked_product_gallery_enabled ? '1' : '0')
   body.append('editorial_gallery_padding_enabled', form.editorial_gallery_padding_enabled ? '1' : '0')
   body.append('direct_buy_now_enabled', form.direct_buy_now_enabled ? '1' : '0')
   body.append('admin_order_notification_emails', JSON.stringify(form.admin_order_notification_emails))
+  body.append('admin_order_sms_enabled', form.admin_order_sms_enabled ? '1' : '0')
+  body.append('admin_order_sms_phones', JSON.stringify(form.admin_order_sms_phones))
 
   const socialPlatforms = ['facebook', 'instagram', 'tiktok', 'youtube', 'whatsapp', 'twitter']
 
@@ -277,6 +318,11 @@ function buildFormData() {
 }
 
 async function submit() {
+  if (adminNotificationPhone.value && !addAdminNotificationPhone()) {
+    document.getElementById('admin-notification-phone')?.focus()
+    return
+  }
+
   saving.value = true
   formError.value = ''
   success.value = false
@@ -611,6 +657,51 @@ const socialConfig = [
           </p>
           <p class="mt-3 text-[11px] leading-5 text-gray-400 dark:text-gray-500">Maximum 10 recipients. Each receives product details, quantities, delivery address and the full order total.</p>
         </div>
+
+        <div class="mt-4 rounded-[14px] bg-gray-950/[0.025] p-4 dark:bg-white/[0.035]">
+          <AppToggle
+            v-model="form.admin_order_sms_enabled"
+            label="Send staff SMS alerts"
+            description="Text each saved recipient the order number when a customer places an online order."
+            role="switch"
+            :aria-checked="form.admin_order_sms_enabled"
+          />
+
+          <label for="admin-notification-phone" class="mt-4 block text-xs font-medium text-gray-700 dark:text-gray-300">Staff mobile number</label>
+          <div class="mt-2 flex flex-col gap-3 sm:flex-row">
+            <input
+              id="admin-notification-phone"
+              v-model.trim="adminNotificationPhone"
+              type="tel"
+              placeholder="+92 300 1234567"
+              class="min-h-11 flex-1 rounded-[10px] border border-gray-950/10 bg-white px-3.5 text-[13px] text-gray-900 outline-none transition focus:border-gray-950/30 dark:border-white/10 dark:bg-white/[0.04] dark:text-white dark:focus:border-white/25"
+              :aria-invalid="!!adminNotificationPhoneError"
+              aria-describedby="admin-sms-recipient-help"
+              @input="adminNotificationPhoneError = ''"
+              @keydown.enter.prevent="addAdminNotificationPhone"
+            >
+            <AppButton type="button" variant="secondary" @click="addAdminNotificationPhone">Add number</AppButton>
+          </div>
+
+          <p id="admin-sms-recipient-help" class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+            Add up to 10 numbers. Use + and the country code for numbers outside Pakistan.
+          </p>
+          <p v-if="adminNotificationPhoneError" role="alert" class="mt-2 text-xs text-red-700 dark:text-red-300">{{ adminNotificationPhoneError }}</p>
+
+          <ul v-if="form.admin_order_sms_phones.length" class="mt-4 flex flex-wrap gap-2">
+            <li
+              v-for="(phone, index) in form.admin_order_sms_phones"
+              :key="phone"
+              class="inline-flex items-center gap-2 rounded-full bg-gray-950/[0.07] px-3 py-1.5 text-xs tabular-nums text-gray-700 dark:bg-white/10 dark:text-gray-200"
+            >
+              {{ phone }}
+              <button type="button" class="flex h-6 w-6 items-center justify-center rounded-full hover:bg-black/5 dark:hover:bg-white/10" :aria-label="`Remove ${phone}`" @click="form.admin_order_sms_phones.splice(index, 1)">×</button>
+            </li>
+          </ul>
+          <p v-else-if="form.admin_order_sms_enabled" class="mt-4 text-xs text-gray-600 dark:text-gray-300">
+            Add a recipient to start receiving SMS alerts.
+          </p>
+        </div>
       </AppCard>
 
       <AppCard class="p-5 sm:p-6">
@@ -643,6 +734,12 @@ const socialConfig = [
           </p>
           <p class="mt-1 text-[12px] leading-5 text-gray-400 dark:text-gray-500">
             When enabled, sold-out products stay visible and their thumbnails display a Sold out badge. When disabled, they are hidden from catalogue, featured, related, search, and wishlist product lists. Direct product links remain available.
+          </p>
+        </div>
+        <div class="mt-4 rounded-[12px] bg-gray-950/[0.025] px-4 py-3.5 dark:bg-white/[0.035]">
+          <AppSelect v-model="form.product_card_badge_visibility" label="Product card chips" :options="productCardBadgeOptions" class="max-w-sm" />
+          <p class="mt-2 text-[12px] leading-5 text-gray-600 dark:text-gray-400">
+            Controls labels like Unstitched and Lawn on product cards. Sold out and sale badges keep their current behavior. Hover mode shows the chips on touch screens.
           </p>
         </div>
       </AppCard>

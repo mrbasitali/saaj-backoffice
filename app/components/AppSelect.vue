@@ -44,6 +44,7 @@ const emit = defineEmits<{
 const open = ref(false)
 const search = ref('')
 const activeIndex = ref(-1)
+const teleportTarget = shallowRef<HTMLElement | string>('body')
 
 const buttonRef =
  ref<HTMLButtonElement | null>(null)
@@ -176,6 +177,7 @@ function openMenu() {
  return
  }
 
+ teleportTarget.value = buttonRef.value?.closest('dialog') ?? 'body'
  open.value = true
 
  setInitialActive()
@@ -278,6 +280,14 @@ function selectActive() {
 function onTriggerKeydown(
  event: KeyboardEvent,
 ) {
+ if (event.key === 'Escape' && open.value) {
+ event.preventDefault()
+ event.stopPropagation()
+ close()
+ buttonRef.value?.focus()
+ return
+ }
+
  if (
  event.key === 'ArrowDown'
  || event.key === 'ArrowUp'
@@ -395,6 +405,7 @@ onBeforeUnmount(() => {
  : '',
  ]"
  :disabled="disabled"
+ :aria-label="label ? `${label}: ${selectedOption?.label || placeholder}` : undefined"
  :aria-expanded="open"
  aria-haspopup="listbox"
  @click.stop="toggle"
@@ -521,7 +532,7 @@ onBeforeUnmount(() => {
  </p>
 
  <!-- Dropdown -->
- <Teleport to="body">
+ <Teleport :to="teleportTarget">
  <Transition
  enter-active-class="
  transition
@@ -578,6 +589,7 @@ onBeforeUnmount(() => {
  :style="menuStyle"
  role="listbox"
  @click.stop
+ @keydown.esc="onTriggerKeydown"
  >
  <!-- Search -->
  <div

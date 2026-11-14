@@ -13,10 +13,16 @@ type InventoryLocation = {
  code: string
 }
 
+type ItemImage = {
+ image_url?: string | null
+ optimized_urls?: { thumb?: string | null, card?: string | null } | null
+}
+
 type Product = {
  id: number
  name: string
- slug: string
+ short_description?: string | null
+ primary_image?: ItemImage | null
 }
 
 type ProductVariant = {
@@ -26,12 +32,14 @@ type ProductVariant = {
  name: string | null
  option_summary: string | null
  product?: Product | null
+ primary_image?: ItemImage | null
 }
 
 type SaleItem = {
  id?: number
  product_variant_id: number | null
  variant?: ProductVariant | null
+ storefront_url?: string | null
  quantity: number
  unit_price: string | number
  cost_price?: string | number | null
@@ -55,6 +63,18 @@ type SaleInvoice = {
  customer_name: string | null
  customer_phone: string | null
  customer_email?: string | null
+ can_resolve_stock_issue?: boolean
+ replacement_deadline?: string | null
+ customer_contact_url?: string
+ status_history?: Array<{ status: string, note: string | null, at: string | null, notify_email: boolean, notify_sms: boolean, email_sent: boolean, sms_sent: boolean }>
+ shipping_recipient_name?: string | null
+ shipping_recipient_phone?: string | null
+ shipping_address_line1?: string | null
+ shipping_address_line2?: string | null
+ shipping_city?: string | null
+ shipping_state?: string | null
+ shipping_country?: string | null
+ shipping_postal_code?: string | null
  subtotal: string | number
  discount_total: string | number
  invoice_discount_amount: string | number
@@ -69,7 +89,7 @@ type SaleInvoice = {
  items?: SaleItem[]
 }
 
-defineProps<{
+const props = defineProps<{
  open: boolean
  invoice: SaleInvoice | null
  printing?: boolean
@@ -80,9 +100,36 @@ const emit = defineEmits<{
  printInvoice: [invoice: SaleInvoice]
  printThermal80: [invoice: SaleInvoice]
  printThermal58: [invoice: SaleInvoice]
+ stockIssueUpdated: [id: number]
 }>()
 
 const { formatDate: formatAppDate, formatDateTime: formatAppDateTime } = useAppDateTime()
+const previewDialog = ref<HTMLDialogElement | null>(null)
+const previewItem = ref<SaleItem | null>(null)
+const issueDialog = ref<HTMLDialogElement | null>(null)
+const issueItem = ref<SaleItem | null>(null)
+const auth = useAuthStore()
+const canResolveStock = computed(() => props.invoice?.can_resolve_stock_issue && auth.hasRole('super_admin', 'admin', 'manager'))
+const stockHistory = computed(() => props.invoice?.status_history?.filter(entry => ['item_unavailable', 'item_replaced', 'cancelled'].includes(entry.status)) ?? [])
+const shippingLines = computed(() => {
+ const invoice = props.invoice
+ if (!invoice) return []
+
+ return [
+  invoice.shipping_address_line1,
+  invoice.shipping_address_line2,
+  [invoice.shipping_city, invoice.shipping_state, invoice.shipping_postal_code].filter(Boolean).join(', '),
+  invoice.shipping_country,
+ ].filter(Boolean)
+})
+const showDelivery = computed(() => props.invoice?.channel === 'online' || shippingLines.value.length > 0)
+
+watch(() => props.open, (open) => {
+ if (!open) {
+  closePreview()
+  closeStockIssue()
+ }
+})
 
 function money(value: string | number | null | undefined) {
  return Number(value || 0).toLocaleString('en', {
@@ -125,6 +172,36 @@ function itemMeta(item: SaleItem) {
  variant?.option_summary || (variant?.name && variant?.name !== itemName(item) ? variant.name : null),
  variant?.sku ? `SKU ${variant.sku}` : null,
  ].filter(Boolean).join(' · ')
+}
+
+function itemImage(item: SaleItem, size: 'thumb' | 'card') {
+ const variant = item.variant?.primary_image
+ const product = item.variant?.product?.primary_image
+ return variant?.optimized_urls?.[size] || variant?.image_url || product?.optimized_urls?.[size] || product?.image_url
+}
+
+async function openPreview(item: SaleItem) {
+ previewItem.value = item
+ await nextTick()
+ if (props.open && previewItem.value && !previewDialog.value?.open) {
+  previewDialog.value?.showModal()
+ }
+}
+
+function closePreview() {
+ previewDialog.value?.close()
+ previewItem.value = null
+}
+
+async function openStockIssue(item: SaleItem) {
+ issueItem.value = item
+ await nextTick()
+ if (props.open && issueItem.value && !issueDialog.value?.open) issueDialog.value?.showModal()
+}
+
+function closeStockIssue() {
+ issueDialog.value?.close()
+ issueItem.value = null
 }
 
 function itemDiscountTotal(invoice: SaleInvoice) {
@@ -228,6 +305,22 @@ function itemDiscountTotal(invoice: SaleInvoice) {
  </div>
  </section>
 
+ <section v-if="showDelivery" class="rounded-[14px] bg-gray-950/[0.025] p-4 dark:bg-white/[0.035]">
+ <h3 class="text-[14px] font-semibold text-gray-900 dark:text-gray-100">Delivery address</h3>
+ <div class="mt-2 space-y-1 text-sm leading-5 text-gray-600 dark:text-gray-300">
+ <p v-if="invoice.shipping_recipient_name" class="font-semibold text-gray-950 dark:text-white">{{ invoice.shipping_recipient_name }}</p>
+ <p v-if="invoice.shipping_recipient_phone">{{ invoice.shipping_recipient_phone }}</p>
+ <p
+ v-for="(line, index) in shippingLines"
+ :key="index"
+ class="break-words"
+ >{{ line }}</p>
+ <p v-if="!invoice.shipping_address_line1 && !invoice.shipping_address_line2" class="text-amber-800 dark:text-amber-300">
+ No street address was recorded for this order.
+ </p>
+ </div>
+ </section>
+
  <section class="rounded-[14px] bg-gray-950/[0.025] p-4 dark:bg-white/[0.035]">
  <h3 class="text-[14px] font-semibold text-gray-900 dark:text-gray-100">Items</h3>
 
@@ -242,10 +335,42 @@ function itemDiscountTotal(invoice: SaleInvoice) {
  :key="item.id || `${item.product_variant_id}-${item.quantity}`"
  class="grid gap-3 px-3 py-3 md:grid-cols-[minmax(0,2.6fr)_.55fr_.8fr_.8fr_.9fr] md:items-center"
  >
+ <div class="flex min-w-0 items-start gap-2.5">
+ <img
+ v-if="itemImage(item, 'thumb')"
+ :src="itemImage(item, 'thumb')"
+ alt=""
+ class="h-12 w-10 shrink-0 rounded-md bg-gray-100 object-cover dark:bg-white/5"
+ loading="lazy"
+ >
  <div class="min-w-0">
- <p class="truncate text-[13px] font-semibold text-gray-900 dark:text-gray-100">{{ itemName(item) }}</p>
+ <p class="break-words text-[13px] font-semibold text-gray-900 dark:text-gray-100">{{ itemName(item) }}</p>
  <p v-if="itemMeta(item)" class="mt-1 break-words text-[11px] text-gray-500 dark:text-gray-500">{{ itemMeta(item) }}</p>
  <p v-if="item.notes" class="mt-1 line-clamp-2 text-[11px] text-gray-400 dark:text-gray-600">{{ item.notes }}</p>
+ <div v-if="item.variant || (canResolveStock && item.id)" class="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-[11px] font-semibold text-gray-700 dark:text-gray-300">
+ <button
+ type="button"
+ class="min-h-6 underline decoration-gray-400 underline-offset-2 hover:decoration-current"
+ v-if="item.variant"
+ :aria-label="`Preview ${itemName(item)}`"
+ @click="openPreview(item)"
+ >Preview</button>
+ <a
+ v-if="item.storefront_url"
+ :href="item.storefront_url"
+ target="_blank"
+ rel="noopener noreferrer"
+ class="inline-flex min-h-6 items-center gap-1 underline decoration-gray-400 underline-offset-2 hover:decoration-current"
+ >View on website <span aria-hidden="true">↗</span></a>
+ <button
+ v-if="canResolveStock && item.id"
+ type="button"
+ class="min-h-6 underline decoration-gray-400 underline-offset-2 hover:decoration-current"
+ :aria-label="`Notify customer about ${itemName(item)}`"
+ @click="openStockIssue(item)"
+ >Notify customer</button>
+ </div>
+ </div>
  </div>
  <div class="flex items-center justify-between gap-3 md:block md:text-right">
  <span class="text-[11px] text-gray-400 md:hidden">Qty</span>
@@ -266,6 +391,23 @@ function itemDiscountTotal(invoice: SaleInvoice) {
  </div>
  </div>
  </div>
+ </section>
+
+ <div v-if="invoice.replacement_deadline" class="rounded-[14px] bg-amber-50 p-4 text-sm text-amber-950 dark:bg-amber-950/30 dark:text-amber-100">
+ Waiting for customer replacement. This order is scheduled to cancel at {{ dateTimeLabel(invoice.replacement_deadline) }}.
+ </div>
+
+ <section v-if="stockHistory.length" class="rounded-[14px] bg-gray-950/[0.025] p-4 dark:bg-white/[0.035]">
+ <h3 class="text-[14px] font-semibold text-gray-900 dark:text-gray-100">Stock issue history</h3>
+ <ul class="mt-2 divide-y divide-gray-200 dark:divide-white/10">
+ <li v-for="(entry, index) in stockHistory" :key="index" class="space-y-1 py-2 text-xs text-gray-600 dark:text-gray-300">
+ <p class="font-semibold">{{ label(entry.status) }} · {{ dateTimeLabel(entry.at) }}</p>
+ <p class="whitespace-pre-wrap break-words">{{ entry.note }}</p>
+ <p v-if="entry.notify_email || entry.notify_sms">
+ {{ [entry.notify_email ? (entry.email_sent ? 'Email sent' : 'Email unconfirmed') : '', entry.notify_sms ? (entry.sms_sent ? 'SMS accepted' : 'SMS unconfirmed') : ''].filter(Boolean).join(' · ') }}
+ </p>
+ </li>
+ </ul>
  </section>
 
  <section
@@ -379,5 +521,50 @@ function itemDiscountTotal(invoice: SaleInvoice) {
  </aside>
  </div>
  </div>
+ <dialog
+ ref="previewDialog"
+ aria-labelledby="invoice-product-preview-title"
+ class="fixed inset-0 m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-[42rem] overflow-y-auto rounded-2xl bg-white p-0 text-gray-950 shadow-2xl backdrop:bg-gray-950/60 backdrop:backdrop-blur-[2px] dark:bg-[#17181b] dark:text-white"
+ @keydown.esc.stop
+ @cancel.prevent="closePreview"
+ >
+ <div v-if="previewItem" class="p-5 sm:p-6">
+ <header class="mb-5 flex items-start justify-between gap-4">
+ <h3 id="invoice-product-preview-title" class="text-lg font-semibold">{{ itemName(previewItem) }}</h3>
+ <button type="button" autofocus class="shrink-0 rounded-md px-2 py-1 text-xs font-semibold hover:bg-gray-950/5 dark:hover:bg-white/10" @click="closePreview">Close preview</button>
+ </header>
+ <div class="grid gap-5" :class="itemImage(previewItem, 'card') ? 'sm:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]' : ''">
+ <img
+ v-if="itemImage(previewItem, 'card')"
+ :src="itemImage(previewItem, 'card')"
+ :alt="itemName(previewItem)"
+ class="max-h-[45vh] w-full rounded-lg bg-gray-100 object-contain dark:bg-white/5"
+ >
+ <div class="min-w-0 space-y-4">
+ <p v-if="itemMeta(previewItem)" class="break-words text-xs text-gray-600 dark:text-gray-300">{{ itemMeta(previewItem) }}</p>
+ <p v-if="previewItem.variant?.product?.short_description" class="whitespace-pre-line break-words text-sm leading-5 text-gray-600 dark:text-gray-300">
+ {{ previewItem.variant.product.short_description }}
+ </p>
+ <dl class="grid grid-cols-2 gap-3 rounded-xl bg-gray-950/[0.035] p-3 text-sm dark:bg-white/[0.06]">
+ <div><dt class="text-xs text-gray-500 dark:text-gray-400">Ordered quantity</dt><dd class="mt-1 font-semibold">{{ previewItem.quantity }}</dd></div>
+ <div><dt class="text-xs text-gray-500 dark:text-gray-400">Unit price on order</dt><dd class="mt-1 font-semibold">{{ money(previewItem.unit_price) }}</dd></div>
+ </dl>
+ <a v-if="previewItem.storefront_url" :href="previewItem.storefront_url" target="_blank" rel="noopener noreferrer" class="inline-flex min-h-9 items-center gap-2 rounded-md bg-gray-950 px-3 text-xs font-semibold text-white dark:bg-white dark:text-gray-950">
+ View on website <span aria-hidden="true">↗</span>
+ </a>
+ <p v-else class="text-xs text-gray-500 dark:text-gray-400">This item has no public product page.</p>
+ </div>
+ </div>
+ </div>
+ </dialog>
+ <dialog
+ ref="issueDialog"
+ aria-labelledby="invoice-stock-issue-title"
+ class="fixed inset-0 m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-[38rem] overflow-y-auto rounded-2xl bg-white p-0 text-gray-950 shadow-2xl backdrop:bg-gray-950/60 backdrop:backdrop-blur-[2px] dark:bg-[#17181b] dark:text-white"
+ @keydown.esc.stop
+ @cancel.prevent
+ >
+ <OrderStockIssuePanel v-if="issueItem && invoice" :invoice="invoice" :item="issueItem" @close="closeStockIssue" @updated="emit('stockIssueUpdated', invoice.id)" />
+ </dialog>
  </AppModal>
 </template>

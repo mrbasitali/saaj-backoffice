@@ -258,10 +258,10 @@ async function confirmDelete() {
     <div class="flex items-center justify-between">
       <div>
         <h3 class="text-sm font-semibold text-gray-950 dark:text-white">
-          Delivery addresses
+          Saved delivery addresses
         </h3>
         <p class="mt-1 text-[12px] text-gray-400">
-          Used for shipping online orders — separate from the general address/city fields above.
+          Reusable addresses for future orders. Each order keeps its own delivery address.
         </p>
       </div>
 
@@ -278,8 +278,8 @@ async function confirmDelete() {
     <AppEmptyState
       v-if="addresses.length === 0"
       class="mt-4"
-      title="No delivery addresses yet"
-      message="Add one so this customer's online orders have somewhere to ship."
+      title="No saved delivery addresses"
+      message="To see where an existing order is shipping, open its order details."
     />
 
     <div

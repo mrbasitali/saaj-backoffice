@@ -116,6 +116,12 @@ const navGroups: NavGroup[] = [
  label: 'Settings',
  links: [
  {
+ label: 'Coupons',
+ to: '/settings/coupons',
+ icon: 'sliders',
+ roles: ['super_admin', 'admin'],
+ },
+ {
  label: 'Maintenance Mode',
  to: '/settings/maintenance',
  icon: 'sliders',

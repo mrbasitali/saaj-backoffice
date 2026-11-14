@@ -1105,7 +1105,7 @@ function nextPage() {
  >
  <AppInput
  v-model="search"
- placeholder="Search products, item code, slug, description or SEO title..."
+ placeholder="Search by product name, SKU, item code or keyword…"
  >
  <template #prefix>
  <svg

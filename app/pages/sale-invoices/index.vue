@@ -544,6 +544,16 @@ async function openView(invoice: SaleInvoice) {
  }
 }
 
+async function afterStockIssueUpdated(id: number) {
+ try {
+  const invoice = await fetchInvoice(id)
+  if (selectedInvoice.value?.id === id) selectedInvoice.value = invoice
+  await Promise.all([refresh(), refreshBootstrap()])
+ } catch {
+  showNotice('The change was saved. Reopen the order to see the latest details.')
+ }
+}
+
 function openProtectedPdf(path: string, fileName: string, title: string) {
  openSecurePdf({
  endpoint: path,
@@ -1331,7 +1341,7 @@ function nextPage() {
  Mark as read
  </AppActionMenuItem>
  <AppActionMenuItem
- v-if="invoice.channel === 'online'"
+ v-if="invoice.channel === 'online' && invoice.status !== 'cancelled'"
  @click="askUpdateStatus(invoice); close()"
  >
  Update status
@@ -1518,7 +1528,7 @@ function nextPage() {
  Mark as read
  </AppActionMenuItem>
  <AppActionMenuItem
- v-if="invoice.channel === 'online'"
+ v-if="invoice.channel === 'online' && invoice.status !== 'cancelled'"
  @click="askUpdateStatus(invoice); close()"
  >
  Update status
@@ -1604,6 +1614,7 @@ function nextPage() {
  :invoice="selectedInvoice"
  :printing="printingDocument"
  @close="viewOpen = false"
+ @stock-issue-updated="afterStockIssueUpdated"
  @print-invoice="printInvoicePdf"
  @print-thermal80="(invoice) => printThermalReceipt(invoice, '80')"
  @print-thermal58="(invoice) => printThermalReceipt(invoice, '58')"

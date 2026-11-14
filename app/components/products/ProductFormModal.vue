@@ -73,6 +73,7 @@ type Product = {
  meta_title: string | null
  meta_description: string | null
  is_active: boolean
+ storefront_sold_out?: boolean
  is_featured: boolean
  is_new_arrival: boolean
  sort_order: number
@@ -196,6 +197,7 @@ const form = reactive({
  meta_title: '',
  meta_description: '',
  is_active: true,
+ storefront_sold_out: false,
  is_featured: false,
  is_new_arrival: false,
  sort_order: 0,
@@ -758,6 +760,8 @@ function resetForm() {
  props.product?.is_active
  ?? true
 
+ form.storefront_sold_out = props.product?.storefront_sold_out ?? false
+
  form.is_featured =
  props.product?.is_featured
  ?? false
@@ -868,6 +872,7 @@ function sectionForErrors(
  'meta_description',
  'published_at',
  'is_active',
+ 'storefront_sold_out',
  'is_featured',
  'is_new_arrival',
  ].includes(key),
@@ -992,6 +997,8 @@ function productPayload() {
 
  is_active:
  form.is_active,
+
+ storefront_sold_out: form.storefront_sold_out,
 
  is_featured:
  form.is_featured,
@@ -2014,6 +2021,14 @@ async function previewStorefront() {
  "
  label="Active"
  description="Available in active catalog areas."
+ />
+ </div>
+
+ <div class="rounded-[12px] bg-gray-950/[0.035] p-3.5 dark:bg-white/[0.055]">
+ <AppToggle
+ v-model="form.storefront_sold_out"
+ label="Mark as sold out online"
+ description="Blocks website purchases for all variants. Inventory quantities and in-store sales are unaffected."
  />
  </div>
 

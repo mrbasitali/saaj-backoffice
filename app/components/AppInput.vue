@@ -11,6 +11,7 @@ withDefaults(defineProps<{
  disabled?: boolean
  min?: string | number
  max?: string | number
+ maxlength?: number
  step?: string | number
 }>(), {
  label: undefined,
@@ -25,6 +26,7 @@ withDefaults(defineProps<{
  step: undefined,
 })
 
+const inputId = useId()
 const inputRef = ref<HTMLInputElement | null>(null)
 
 defineExpose({
@@ -36,6 +38,7 @@ defineExpose({
  <div class="min-w-0">
  <label
  v-if="label"
+ :for="inputId"
  class="
  mb-1.5
  block
@@ -111,6 +114,7 @@ defineExpose({
 
  <input
  ref="inputRef"
+ :id="inputId"
  v-model="model"
  :type="type"
  :placeholder="placeholder"
@@ -119,6 +123,7 @@ defineExpose({
  :disabled="disabled"
  :min="min"
  :max="max"
+ :maxlength="maxlength"
  :step="step"
  class="
  h-10
