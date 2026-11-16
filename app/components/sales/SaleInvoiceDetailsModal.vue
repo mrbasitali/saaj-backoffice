@@ -65,6 +65,7 @@ type SaleInvoice = {
  customer_email?: string | null
  can_resolve_stock_issue?: boolean
  replacement_deadline?: string | null
+ details_correction_deadline?: string | null
  customer_contact_url?: string
  status_history?: Array<{ status: string, note: string | null, at: string | null, notify_email: boolean, notify_sms: boolean, email_sent: boolean, sms_sent: boolean }>
  shipping_recipient_name?: string | null
@@ -108,9 +109,11 @@ const previewDialog = ref<HTMLDialogElement | null>(null)
 const previewItem = ref<SaleItem | null>(null)
 const issueDialog = ref<HTMLDialogElement | null>(null)
 const issueItem = ref<SaleItem | null>(null)
+const correctionDialog = ref<HTMLDialogElement | null>(null)
+const correctionOpen = ref(false)
 const auth = useAuthStore()
 const canResolveStock = computed(() => props.invoice?.can_resolve_stock_issue && auth.hasRole('super_admin', 'admin', 'manager'))
-const stockHistory = computed(() => props.invoice?.status_history?.filter(entry => ['item_unavailable', 'item_replaced', 'cancelled'].includes(entry.status)) ?? [])
+const issueHistory = computed(() => props.invoice?.status_history?.filter(entry => ['item_unavailable', 'item_replaced', 'details_requested', 'details_updated', 'cancelled'].includes(entry.status)) ?? [])
 const shippingLines = computed(() => {
  const invoice = props.invoice
  if (!invoice) return []
@@ -128,6 +131,7 @@ watch(() => props.open, (open) => {
  if (!open) {
   closePreview()
   closeStockIssue()
+  closeCorrection()
  }
 })
 
@@ -204,6 +208,17 @@ function closeStockIssue() {
  issueItem.value = null
 }
 
+async function openCorrection() {
+ correctionOpen.value = true
+ await nextTick()
+ if (props.open && !correctionDialog.value?.open) correctionDialog.value?.showModal()
+}
+
+function closeCorrection() {
+ correctionDialog.value?.close()
+ correctionOpen.value = false
+}
+
 function itemDiscountTotal(invoice: SaleInvoice) {
  return Math.max(0, Number(invoice.discount_total || 0) - Number(invoice.invoice_discount_amount || 0))
 }
@@ -247,6 +262,15 @@ function itemDiscountTotal(invoice: SaleInvoice) {
  </div>
 
  <div class="flex flex-wrap gap-2">
+ <AppButton
+ v-if="canResolveStock && !invoice.details_correction_deadline && !invoice.replacement_deadline"
+ type="button"
+ variant="secondary"
+ aria-label="Notify customer about order details"
+ @click="openCorrection"
+ >
+ Notify customer
+ </AppButton>
  <AppBadge :variant="invoice.status === 'completed' ? 'green' : invoice.status === 'draft' ? 'amber' : 'red'">
  {{ label(invoice.status) }}
  </AppBadge>
@@ -397,14 +421,18 @@ function itemDiscountTotal(invoice: SaleInvoice) {
  Waiting for customer replacement. This order is scheduled to cancel at {{ dateTimeLabel(invoice.replacement_deadline) }}.
  </div>
 
- <section v-if="stockHistory.length" class="rounded-[14px] bg-gray-950/[0.025] p-4 dark:bg-white/[0.035]">
- <h3 class="text-[14px] font-semibold text-gray-900 dark:text-gray-100">Stock issue history</h3>
+ <div v-if="invoice.details_correction_deadline" class="rounded-[14px] bg-amber-50 p-4 text-sm text-amber-950 dark:bg-amber-950/30 dark:text-amber-100">
+ Waiting for updated order details. This order is scheduled to cancel at {{ dateTimeLabel(invoice.details_correction_deadline) }}.
+ </div>
+
+ <section v-if="issueHistory.length" class="rounded-[14px] bg-gray-950/[0.025] p-4 dark:bg-white/[0.035]">
+ <h3 class="text-[14px] font-semibold text-gray-900 dark:text-gray-100">Order issue history</h3>
  <ul class="mt-2 divide-y divide-gray-200 dark:divide-white/10">
- <li v-for="(entry, index) in stockHistory" :key="index" class="space-y-1 py-2 text-xs text-gray-600 dark:text-gray-300">
+ <li v-for="(entry, index) in issueHistory" :key="index" class="space-y-1 py-2 text-xs text-gray-600 dark:text-gray-300">
  <p class="font-semibold">{{ label(entry.status) }} · {{ dateTimeLabel(entry.at) }}</p>
  <p class="whitespace-pre-wrap break-words">{{ entry.note }}</p>
  <p v-if="entry.notify_email || entry.notify_sms">
- {{ [entry.notify_email ? (entry.email_sent ? 'Email sent' : 'Email unconfirmed') : '', entry.notify_sms ? (entry.sms_sent ? 'SMS accepted' : 'SMS unconfirmed') : ''].filter(Boolean).join(' · ') }}
+ {{ [entry.notify_email ? (entry.email_sent ? 'Email sent' : entry.status === 'cancelled' ? 'Cancellation email pending or unconfirmed' : 'Email unconfirmed') : '', entry.notify_sms ? (entry.sms_sent ? 'SMS accepted' : 'SMS unconfirmed') : ''].filter(Boolean).join(' · ') }}
  </p>
  </li>
  </ul>
@@ -565,6 +593,15 @@ function itemDiscountTotal(invoice: SaleInvoice) {
  @cancel.prevent
  >
  <OrderStockIssuePanel v-if="issueItem && invoice" :invoice="invoice" :item="issueItem" @close="closeStockIssue" @updated="emit('stockIssueUpdated', invoice.id)" />
+ </dialog>
+ <dialog
+ ref="correctionDialog"
+ aria-labelledby="invoice-details-correction-title"
+ class="fixed inset-0 m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-[38rem] overflow-y-auto rounded-2xl bg-white p-0 text-gray-950 shadow-2xl backdrop:bg-gray-950/60 backdrop:backdrop-blur-[2px] dark:bg-[#17181b] dark:text-white"
+ @keydown.esc.stop
+ @cancel.prevent
+ >
+ <OrderDetailsCorrectionPanel v-if="correctionOpen && invoice" :invoice="invoice" @close="closeCorrection" @updated="emit('stockIssueUpdated', invoice.id)" />
  </dialog>
  </AppModal>
 </template>
