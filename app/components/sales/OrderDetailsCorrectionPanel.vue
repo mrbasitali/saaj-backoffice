@@ -32,8 +32,11 @@ const phone = ref(orderPhone)
 const cancellationEmail = ref('')
 const notifyEmail = ref(Boolean(orderEmail))
 const notifySms = ref(!orderEmail && Boolean(orderPhone))
+const selectedFieldLabels = computed(() => fieldOptions
+  .filter(option => fields.value.includes(option.value))
+  .map(option => option.label))
 const fieldSummary = computed(() => {
-  const labels = fieldOptions.filter(option => fields.value.includes(option.value)).map(option => option.label.toLowerCase())
+  const labels = selectedFieldLabels.value.map(label => label.toLowerCase())
   const last = labels.pop()
   return labels.length ? labels.join(', ') + ' and ' + last : last || 'order details'
 })
@@ -164,6 +167,12 @@ async function submit() {
           <p class="text-xs text-gray-600 dark:text-gray-300">Action needed — confirm details for SAAJ order {{ invoice.invoice_number }}</p>
           <p class="font-serif text-xl font-semibold">Please update your order details.</p>
           <p class="whitespace-pre-wrap break-words">{{ emailMessage }}</p>
+          <div v-if="selectedFieldLabels.length" class="border-l-[3px] border-[#171815] bg-[#f1efe9] p-3 text-[#171815] dark:border-gray-200 dark:bg-white/10 dark:text-gray-100">
+            <p class="font-semibold">Details to update</p>
+            <ul class="mt-1 list-disc pl-5">
+              <li v-for="label in selectedFieldLabels" :key="label">{{ label }}</li>
+            </ul>
+          </div>
           <div class="bg-white/75 p-3 text-sm dark:bg-black/20">
             <p class="font-semibold">Update deadline</p>
             <p>Save your details by {{ deadlinePreview }} to avoid automatic cancellation.</p>

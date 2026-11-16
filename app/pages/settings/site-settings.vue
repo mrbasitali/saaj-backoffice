@@ -623,9 +623,9 @@ const socialConfig = [
 
       <AppCard class="p-5 sm:p-6">
         <div>
-          <p class="text-sm font-semibold text-gray-950 dark:text-white">New online order notifications</p>
+          <p class="text-sm font-semibold text-gray-950 dark:text-white">Online order notifications</p>
           <p class="mt-1 max-w-2xl text-[13px] leading-5 text-gray-400 dark:text-gray-500">
-            Add one or more inboxes that should receive the complete order summary whenever a customer places an order on the website.
+            Choose which inboxes receive alerts for new online orders, confirmed replacements and customer corrections.
           </p>
         </div>
 
@@ -653,16 +653,16 @@ const socialConfig = [
             </span>
           </div>
           <p v-else class="mt-4 text-[12px] leading-5 text-gray-400 dark:text-gray-500">
-            No recipients added. New-order admin emails are currently off; unread-order indicators in Backoffice still work.
+            Add an email recipient to receive staff order alerts.
           </p>
-          <p class="mt-3 text-[11px] leading-5 text-gray-400 dark:text-gray-500">Maximum 10 recipients. Each receives product details, quantities, delivery address and the full order total.</p>
+          <p class="mt-3 text-[11px] leading-5 text-gray-400 dark:text-gray-500">Maximum 10 recipients. New-order emails include the full order summary.</p>
         </div>
 
         <div class="mt-4 rounded-[14px] bg-gray-950/[0.025] p-4 dark:bg-white/[0.035]">
           <AppToggle
             v-model="form.admin_order_sms_enabled"
             label="Send staff SMS alerts"
-            description="Text each saved recipient the order number when a customer places an online order."
+            description="Text saved recipients about new online orders, confirmed replacements and customer corrections."
             role="switch"
             :aria-checked="form.admin_order_sms_enabled"
           />
