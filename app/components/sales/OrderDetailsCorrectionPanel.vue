@@ -25,11 +25,29 @@ const phone = ref(orderPhone)
 const cancellationEmail = ref('')
 const notifyEmail = ref(Boolean(orderEmail))
 const notifySms = ref(!orderEmail && Boolean(orderPhone))
-const message = ref('Please provide the correct information for your SAAJ order using the private link below.')
+const fieldSummary = computed(() => {
+  const labels = fieldOptions.filter(option => fields.value.includes(option.value)).map(option => option.label.toLowerCase())
+  const last = labels.pop()
+  return labels.length ? labels.join(', ') + ' and ' + last : last || 'order details'
+})
+const emailDraft = ref<string | null>(null)
+const smsDraft = ref<string | null>(null)
+const emailMessage = computed({
+  get: () => emailDraft.value ?? `We need you to confirm or correct your ${fieldSummary.value} before we can ship your SAAJ order. Open the private link below to save the updated details.`,
+  set: (value: string) => { emailDraft.value = value },
+})
+const smsMessage = computed({
+  get: () => smsDraft.value ?? `SAAJ: Action needed. Update your ${fieldSummary.value} for order ${props.invoice.invoice_number}.`,
+  set: (value: string) => { smsDraft.value = value },
+})
 const deadline = ref('24')
 const customHours = ref('')
 const hours = computed(() => Number(deadline.value === 'custom' ? customHours.value : deadline.value))
 const validHours = computed(() => Number.isInteger(hours.value) && hours.value >= 1 && hours.value <= 720)
+const { formatDateTime } = useAppDateTime()
+const deadlinePreview = computed(() => validHours.value
+  ? formatDateTime(Date.now() + hours.value * 3_600_000)
+  : '[deadline]')
 const options = [
   { value: '6', label: '6 hours' },
   { value: '12', label: '12 hours' },
@@ -45,9 +63,11 @@ const saving = ref(false)
 const error = ref('')
 const result = ref('')
 const panel = ref<HTMLElement>()
-const canSend = computed(() => fields.value.length > 0 && validHours.value && message.value.trim()
-  && (notifyEmail.value || notifySms.value) && (!notifyEmail.value || email.value.trim())
-  && (!notifySms.value || phone.value.trim()) && !requiresAlternateEmail.value && !requiresAlternatePhone.value)
+const canSend = computed(() => fields.value.length > 0 && validHours.value
+  && (notifyEmail.value || notifySms.value)
+  && (!notifyEmail.value || (email.value.trim() && emailMessage.value.trim()))
+  && (!notifySms.value || (phone.value.trim() && smsMessage.value.trim()))
+  && !requiresAlternateEmail.value && !requiresAlternatePhone.value)
 
 function onEscape() {
   if (!saving.value) emit('close')
@@ -64,7 +84,8 @@ async function submit() {
       method: 'POST',
       body: {
         fields: fields.value,
-        message: message.value.trim(),
+        message: notifyEmail.value ? emailDraft.value?.trim() : undefined,
+        sms_message: notifySms.value ? smsDraft.value?.trim() : undefined,
         cancel_after_hours: hours.value,
         email: notifyEmail.value ? email.value.trim() : null,
         phone: notifySms.value ? phone.value.trim() : null,
@@ -118,11 +139,38 @@ async function submit() {
         <AppInput v-if="deadline === 'custom'" v-model="customHours" label="Custom hours" type="number" min="1" max="720" step="1" required :disabled="saving" />
       </div>
 
-      <label class="block text-sm font-semibold">
-        Customer message
-        <textarea v-model="message" rows="3" maxlength="500" required :disabled="saving" class="mt-2 w-full rounded-lg border border-gray-300 bg-transparent p-3 text-sm font-normal dark:border-white/20" />
-      </label>
-      <p class="text-xs leading-5 text-gray-600 dark:text-gray-300">The notice includes the private link and exact deadline. Saving the requested details removes automatic cancellation.</p>
+      <div v-if="notifyEmail" class="space-y-3">
+        <label class="block text-sm font-semibold">
+          Email message
+          <textarea v-model="emailMessage" rows="3" maxlength="500" required :disabled="saving" class="mt-2 block w-full resize-y rounded-[10px] bg-gray-950/[0.04] px-3 py-2.5 text-sm font-normal dark:bg-white/[0.06]" />
+        </label>
+        <button v-if="emailDraft !== null" type="button" class="text-xs font-medium underline" :disabled="saving" @click="emailDraft = null">Reset email message</button>
+        <section class="space-y-3 rounded-xl bg-gray-950/[0.045] p-4 text-sm dark:bg-white/[0.06]">
+          <h4 class="font-semibold">Email preview</h4>
+          <p class="text-xs text-gray-600 dark:text-gray-300">Action needed — confirm details for SAAJ order {{ invoice.invoice_number }}</p>
+          <p class="font-serif text-xl font-semibold">Please update your order details.</p>
+          <p class="whitespace-pre-wrap break-words">{{ emailMessage }}</p>
+          <div class="bg-white/75 p-3 text-sm dark:bg-black/20">
+            <p class="font-semibold">Update deadline</p>
+            <p>Save your details by {{ deadlinePreview }} to avoid automatic cancellation.</p>
+          </div>
+          <span class="inline-block bg-[#171815] px-4 py-2.5 font-medium text-white">Update order details →</span>
+          <p class="text-xs text-gray-600 dark:text-gray-300">[Private order update link]</p>
+        </section>
+      </div>
+      <div v-if="notifySms" class="space-y-3">
+        <label class="block text-sm font-semibold">
+          SMS message
+          <textarea v-model="smsMessage" rows="2" maxlength="180" required :disabled="saving" class="mt-2 block w-full resize-y rounded-[10px] bg-gray-950/[0.04] px-3 py-2.5 text-sm font-normal dark:bg-white/[0.06]" />
+        </label>
+        <button v-if="smsDraft !== null" type="button" class="text-xs font-medium underline" :disabled="saving" @click="smsDraft = null">Reset SMS message</button>
+        <section class="space-y-2 rounded-xl bg-gray-950/[0.045] p-4 text-sm dark:bg-white/[0.06]">
+          <h4 class="font-semibold">SMS preview</h4>
+          <p class="whitespace-pre-wrap break-words">{{ smsMessage }}</p>
+          <p>Save by {{ deadlinePreview }} to avoid cancellation: [Private order update link]</p>
+        </section>
+      </div>
+      <p class="text-xs leading-5 text-gray-600 dark:text-gray-300">The exact deadline is set when you send the notice. Saving the requested details removes automatic cancellation.</p>
       <p v-if="error" role="alert" class="rounded-lg bg-rose-500/10 p-3 text-sm text-rose-900 dark:text-rose-100">{{ error }}</p>
 
       <div class="flex justify-end">

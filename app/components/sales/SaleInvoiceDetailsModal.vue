@@ -438,6 +438,11 @@ function itemDiscountTotal(invoice: SaleInvoice) {
  </ul>
  </section>
 
+ <CustomerActivityLog
+ v-if="open && invoice.channel === 'online' && auth.hasRole('super_admin', 'admin', 'manager')"
+ :endpoint="`/admin/sale-invoices/${invoice.id}/customer-activity`"
+ />
+
  <section
  v-if="invoice.notes"
  class="rounded-[14px] bg-gray-950/[0.025] p-4 dark:bg-white/[0.035]"

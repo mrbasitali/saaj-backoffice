@@ -51,6 +51,7 @@ const emit = defineEmits<{
 }>()
 
 const { $api } = useNuxtApp()
+const auth = useAuthStore()
 
 const saving = ref(false)
 const formError = ref('')
@@ -387,6 +388,12 @@ async function submit() {
  :customer-id="customer.id"
  :addresses="customer.addresses || []"
  @changed="emit('addresses-changed')"
+ />
+ <CustomerActivityLog
+ v-if="open && auth.hasRole('super_admin', 'admin', 'manager')"
+ class="mt-5"
+ :endpoint="`/admin/customers/${customer.id}/activity`"
+ show-order
  />
  </section>
  </div>
