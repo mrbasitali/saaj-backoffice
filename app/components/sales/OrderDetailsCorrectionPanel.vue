@@ -18,6 +18,13 @@ const fieldOptions = [
   { value: 'phone', label: 'Delivery phone' },
 ]
 const fields = ref<string[]>(['address'])
+
+function setField(field: string, checked: boolean) {
+  fields.value = checked
+    ? [...fields.value, field]
+    : fields.value.filter(value => value !== field)
+}
+
 const orderEmail = props.invoice.customer_email || props.invoice.customer?.email || ''
 const orderPhone = props.invoice.shipping_recipient_phone || props.invoice.customer_phone || props.invoice.customer?.phone || ''
 const email = ref(orderEmail)
@@ -114,25 +121,19 @@ async function submit() {
 
     <p v-if="result" role="status" class="rounded-lg bg-emerald-500/10 p-3 text-sm text-emerald-900 dark:text-emerald-100">{{ result }}</p>
     <form v-else class="space-y-5" @submit.prevent="submit">
-      <fieldset class="text-sm disabled:opacity-50" :disabled="saving">
+      <fieldset class="grid gap-2 text-sm" :disabled="saving">
         <legend class="mb-2 font-semibold">Details to correct</legend>
-        <div class="flex flex-wrap gap-x-5 gap-y-1">
-          <label v-for="option in fieldOptions" :key="option.value" class="inline-flex min-h-9 cursor-pointer items-center gap-2.5 has-[:disabled]:cursor-not-allowed">
-            <input v-model="fields" type="checkbox" :value="option.value" class="peer sr-only">
-            <span
-              aria-hidden="true"
-              class="flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] text-transparent ring-1 ring-gray-300 transition-colors
-                peer-checked:bg-gray-950 peer-checked:text-white peer-checked:ring-gray-950
-                peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-gray-500
-                dark:ring-white/25 dark:peer-checked:bg-white dark:peer-checked:text-gray-950 dark:peer-checked:ring-white dark:peer-focus-visible:outline-gray-300"
-            >
-              <svg class="h-3 w-3" viewBox="0 0 16 16" fill="none">
-                <path d="M3.5 8.5L6.5 11.5L12.5 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-              </svg>
-            </span>
-            {{ option.label }}
-          </label>
-        </div>
+        <AppToggle
+          v-for="option in fieldOptions"
+          :key="option.value"
+          :model-value="fields.includes(option.value)"
+          :label="option.label"
+          role="switch"
+          :aria-checked="fields.includes(option.value)"
+          :disabled="saving"
+          class="min-h-8 rounded-md focus-visible:ring-2 focus-visible:ring-gray-500 dark:focus-visible:ring-gray-300"
+          @update:model-value="setField(option.value, $event)"
+        />
       </fieldset>
 
       <fieldset class="space-y-3" :disabled="saving">
