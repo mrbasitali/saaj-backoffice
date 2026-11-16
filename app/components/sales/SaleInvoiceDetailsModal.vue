@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { OrderCancellationPreview } from './OnlineOrderCancellationPanel.vue'
+
 type Customer = {
  id: number
  code: string
@@ -64,6 +66,7 @@ type SaleInvoice = {
  customer_phone: string | null
  customer_email?: string | null
  can_resolve_stock_issue?: boolean
+ cancellation_notice?: OrderCancellationPreview | null
  replacement_deadline?: string | null
  details_correction_deadline?: string | null
  customer_contact_url?: string
@@ -111,6 +114,8 @@ const issueDialog = ref<HTMLDialogElement | null>(null)
 const issueItem = ref<SaleItem | null>(null)
 const correctionDialog = ref<HTMLDialogElement | null>(null)
 const correctionOpen = ref(false)
+const cancellationDialog = ref<HTMLDialogElement | null>(null)
+const cancellation = ref<{ id: number, orderNumber: string, notice: OrderCancellationPreview }>()
 const auth = useAuthStore()
 const canResolveStock = computed(() => props.invoice?.can_resolve_stock_issue && auth.hasRole('super_admin', 'admin', 'manager'))
 const issueHistory = computed(() => props.invoice?.status_history?.filter(entry => ['item_unavailable', 'item_replaced', 'details_requested', 'details_updated', 'cancelled'].includes(entry.status)) ?? [])
@@ -132,6 +137,7 @@ watch(() => props.open, (open) => {
   closePreview()
   closeStockIssue()
   closeCorrection()
+  closeCancellation()
  }
 })
 
@@ -219,6 +225,20 @@ function closeCorrection() {
  correctionOpen.value = false
 }
 
+async function openCancellation() {
+ const invoice = props.invoice
+ if (!invoice?.cancellation_notice) return
+
+ cancellation.value = { id: invoice.id, orderNumber: invoice.invoice_number, notice: invoice.cancellation_notice }
+ await nextTick()
+ if (props.open && !cancellationDialog.value?.open) cancellationDialog.value?.showModal()
+}
+
+function closeCancellation() {
+ cancellationDialog.value?.close()
+ cancellation.value = undefined
+}
+
 function itemDiscountTotal(invoice: SaleInvoice) {
  return Math.max(0, Number(invoice.discount_total || 0) - Number(invoice.invoice_discount_amount || 0))
 }
@@ -270,6 +290,14 @@ function itemDiscountTotal(invoice: SaleInvoice) {
  @click="openCorrection"
  >
  Notify customer
+ </AppButton>
+ <AppButton
+ v-if="canResolveStock && invoice.cancellation_notice"
+ type="button"
+ variant="danger"
+ @click="openCancellation"
+ >
+ Cancel order
  </AppButton>
  <AppBadge :variant="invoice.status === 'completed' ? 'green' : invoice.status === 'draft' ? 'amber' : 'red'">
  {{ label(invoice.status) }}
@@ -432,7 +460,7 @@ function itemDiscountTotal(invoice: SaleInvoice) {
  <p class="font-semibold">{{ label(entry.status) }} · {{ dateTimeLabel(entry.at) }}</p>
  <p class="whitespace-pre-wrap break-words">{{ entry.note }}</p>
  <p v-if="entry.notify_email || entry.notify_sms">
- {{ [entry.notify_email ? (entry.email_sent ? 'Email sent' : entry.status === 'cancelled' ? 'Cancellation email pending or unconfirmed' : 'Email unconfirmed') : '', entry.notify_sms ? (entry.sms_sent ? 'SMS accepted' : 'SMS unconfirmed') : ''].filter(Boolean).join(' · ') }}
+ {{ [entry.notify_email ? (entry.email_sent ? 'Email sent' : entry.status === 'cancelled' ? 'Cancellation email pending or unconfirmed' : 'Email unconfirmed') : '', entry.notify_sms ? (entry.sms_sent ? 'SMS accepted' : entry.status === 'cancelled' ? 'Cancellation SMS pending or unconfirmed' : 'SMS unconfirmed') : ''].filter(Boolean).join(' · ') }}
  </p>
  </li>
  </ul>
@@ -607,6 +635,15 @@ function itemDiscountTotal(invoice: SaleInvoice) {
  @cancel.prevent
  >
  <OrderDetailsCorrectionPanel v-if="correctionOpen && invoice" :invoice="invoice" @close="closeCorrection" @updated="emit('stockIssueUpdated', invoice.id)" />
+ </dialog>
+ <dialog
+ ref="cancellationDialog"
+ aria-labelledby="online-order-cancellation-title"
+ class="fixed inset-0 m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-[38rem] overflow-y-auto rounded-2xl bg-white p-0 text-gray-950 shadow-2xl backdrop:bg-gray-950/60 backdrop:backdrop-blur-[2px] dark:bg-[#17181b] dark:text-white"
+ @keydown.esc.stop
+ @cancel.prevent
+ >
+ <OnlineOrderCancellationPanel v-if="cancellation" v-bind="cancellation" @close="closeCancellation" @updated="emit('stockIssueUpdated', $event)" />
  </dialog>
  </AppModal>
 </template>
